@@ -309,6 +309,8 @@ public final class PatternTransfer {
             RecipeCatalystResolver.appendMachineAliases(machineData, categoryUid);
             LOGGER.info("[AE2QuickEncodingUpload] category={} registered catalyst count={}",
                     categoryUid, catalysts.size());
+            LOGGER.info("[AE2QuickEncodingUpload] category={} HEI machines={}",
+                    categoryUid, RecipeCatalystResolver.describeCatalysts(categoryUid));
             InterfaceTarget categoryTarget = findCategoryCatalystTarget(container, categoryUid, catalysts);
             if (categoryTarget != null) {
                 return categoryTarget;

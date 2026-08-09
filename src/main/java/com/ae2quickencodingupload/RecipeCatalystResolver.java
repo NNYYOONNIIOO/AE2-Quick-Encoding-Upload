@@ -89,6 +89,18 @@ public final class RecipeCatalystResolver {
     }
 
     private static void captureCatalystTable(Object table) {
+        Object backingMap = readNamedField(table, "map");
+        if (backingMap instanceof Map) {
+            int categoryCount = 0;
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) backingMap).entrySet()) {
+                captureRecipeCatalyst(entry.getValue(), new String[]{String.valueOf(entry.getKey())});
+                categoryCount++;
+            }
+            LOGGER.info("[AE2QuickEncodingUpload] captured HEI catalyst map categories={}",
+                    categoryCount);
+            return;
+        }
+
         Object entries = invokeNoArg(table, "entrySet");
         if (entries instanceof Iterable) {
             int categoryCount = 0;

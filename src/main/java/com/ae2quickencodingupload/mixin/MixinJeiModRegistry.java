@@ -22,6 +22,14 @@ public abstract class MixinJeiModRegistry {
     }
 
     @Inject(method = "createRecipeRegistry(Lmezz/jei/ingredients/IngredientRegistry;)Lmezz/jei/recipes/RecipeRegistry;",
+            at = @At("HEAD"), remap = false, require = 0)
+    private void ae2QuickEncodingUpload$captureRecipeCatalystTableAtHead(
+            IngredientRegistry ingredientRegistry,
+            CallbackInfo callback) {
+        RecipeCatalystResolver.captureModRegistry(this);
+    }
+
+    @Inject(method = "createRecipeRegistry(Lmezz/jei/ingredients/IngredientRegistry;)Lmezz/jei/recipes/RecipeRegistry;",
             at = @At("RETURN"), remap = false, require = 0)
     private void ae2QuickEncodingUpload$captureRecipeCatalystTable(
             IngredientRegistry ingredientRegistry,
