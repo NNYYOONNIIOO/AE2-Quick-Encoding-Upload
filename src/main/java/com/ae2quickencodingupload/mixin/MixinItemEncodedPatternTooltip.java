@@ -159,4 +159,3 @@ public abstract class MixinItemEncodedPatternTooltip {
                 || value.endsWith("Fluid") || value.endsWith("Machine"));
     }
 }
-
