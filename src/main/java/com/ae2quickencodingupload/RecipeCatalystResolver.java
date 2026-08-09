@@ -110,9 +110,22 @@ public final class RecipeCatalystResolver {
         if (value == null) {
             return "";
         }
+        value = stripFormattingCodes(value);
         return value.replaceAll("(?i)§[0-9a-fk-or]", "")
                 .toLowerCase(Locale.ROOT)
                 .replaceAll("[^\\p{L}\\p{N}]", "");
+    }
+
+    private static String stripFormattingCodes(String value) {
+        StringBuilder result = new StringBuilder(value.length());
+        for (int index = 0; index < value.length(); index++) {
+            if (value.charAt(index) == 167 && index + 1 < value.length()) {
+                index++;
+                continue;
+            }
+            result.append(value.charAt(index));
+        }
+        return result.toString();
     }
 
     private static Object findCategoryIgnoreCase(Object recipeRegistry, String categoryUid) {

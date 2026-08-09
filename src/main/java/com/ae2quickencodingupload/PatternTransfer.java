@@ -608,23 +608,6 @@ public final class PatternTransfer {
      * compression capability. This deliberately does not contain mod names or
      * machine-specific aliases; exact aliases and stored patterns still win.
      */
-    private static boolean matchesGenericProcessingCapability(List<String> metadata,
-                                                              String candidate) {
-        if (!isCapabilityVariantName(candidate)) {
-            return false;
-        }
-
-        Set<String> roots = capabilityRoots(candidate);
-        for (String root : roots) {
-            for (String value : metadata) {
-                if (normalize(value).contains(root)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
     private static boolean isCapabilityVariantName(String value) {
         String normalized = normalize(value);
         return normalized.contains("factory") || normalized.contains("machine")
@@ -868,12 +851,28 @@ public final class PatternTransfer {
     }
 
     private static String normalize(String value) {
+        value = stripFormattingCodes(value);
         return value == null ? "" : value.toLowerCase(Locale.ROOT)
                 // Remove Minecraft formatting codes before removing punctuation.
                 // Otherwise "锇压缩机§r" becomes "锇压缩机r" and cannot match
                 // the same interface name without the reset code.
                 .replaceAll("(?i)§[0-9a-fk-or]", "")
                 .replaceAll("[^\\p{L}\\p{N}]", "");
+    }
+
+    private static String stripFormattingCodes(String value) {
+        if (value == null) {
+            return null;
+        }
+        StringBuilder result = new StringBuilder(value.length());
+        for (int index = 0; index < value.length(); index++) {
+            if (value.charAt(index) == 167 && index + 1 < value.length()) {
+                index++;
+                continue;
+            }
+            result.append(value.charAt(index));
+        }
+        return result.toString();
     }
 
     private static void add(List<String> values, String value) {
