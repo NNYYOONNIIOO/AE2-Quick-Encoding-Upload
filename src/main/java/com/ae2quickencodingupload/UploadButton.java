@@ -2,12 +2,15 @@ package com.ae2quickencodingupload;
 
 import appeng.client.gui.widgets.ITooltip;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.text.translation.I18n;
 
+/** The upload control rendered on top of the pattern terminal GUI. */
 public final class UploadButton extends GuiButton implements ITooltip {
+    private static final int SIZE = 16;
     private static final ResourceLocation AE2_BUTTON_BACKGROUND = new ResourceLocation(
             "ae2_quick_encoding", "textures/guis/set.png");
     private static final ResourceLocation MANUAL = new ResourceLocation(
@@ -21,7 +24,8 @@ public final class UploadButton extends GuiButton implements ITooltip {
     private boolean automaticEnabled;
 
     public UploadButton(int x, int y) {
-        super(0xAE2001, x, y, 16, 16, "");
+        super(0xAE2001, x, y, SIZE, SIZE, "");
+        this.enabled = true;
     }
 
     public void setState(boolean settingsMode, boolean automaticEnabled) {
@@ -34,23 +38,32 @@ public final class UploadButton extends GuiButton implements ITooltip {
         if (!visible) {
             return;
         }
-        ResourceLocation icon = settingsMode
-                ? (automaticEnabled ? ENABLED : DISABLED) : MANUAL;
-        minecraft.getTextureManager().bindTexture(AE2_BUTTON_BACKGROUND);
+        hovered = mouseX >= x && mouseY >= y && mouseX < x + width && mouseY < y + height;
+        GlStateManager.pushMatrix();
+        GlStateManager.enableBlend();
+        GlStateManager.enableAlpha();
         GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
-        drawModalRectWithCustomSizedTexture(x, y, 0, 0, 16, 16, 16, 16);
-        minecraft.getTextureManager().bindTexture(icon);
-        drawModalRectWithCustomSizedTexture(x, y, 0, 0, 16, 16, 16, 16);
+        minecraft.getTextureManager().bindTexture(AE2_BUTTON_BACKGROUND);
+        Gui.drawModalRectWithCustomSizedTexture(x, y, 0.0F, 0.0F, SIZE, SIZE, SIZE, SIZE);
+        minecraft.getTextureManager().bindTexture(settingsMode
+                ? (automaticEnabled ? ENABLED : DISABLED) : MANUAL);
+        Gui.drawModalRectWithCustomSizedTexture(x, y, 0.0F, 0.0F, SIZE, SIZE, SIZE, SIZE);
+        GlStateManager.popMatrix();
     }
 
     @Override
     public String getMessage() {
-        if (!settingsMode) {
-            return I18n.translateToLocal("ae2_quick_encoding_upload.gui.upload");
-        }
-        return I18n.translateToLocal(automaticEnabled
-                ? "ae2_quick_encoding_upload.gui.auto_upload.enabled"
-                : "ae2_quick_encoding_upload.gui.auto_upload.disabled");
+        return settingsMode
+                ? I18n.translateToLocal("ae2_quick_encoding_upload.gui.auto_upload")
+                : I18n.translateToLocal("ae2_quick_encoding_upload.gui.upload");
+    }
+
+    public String getTooltipState() {
+        return I18n.translateToLocal(settingsMode
+                ? (automaticEnabled
+                        ? "ae2_quick_encoding_upload.gui.auto_upload.enabled"
+                        : "ae2_quick_encoding_upload.gui.auto_upload.disabled")
+                : "ae2_quick_encoding_upload.gui.upload");
     }
 
     @Override public int xPos() { return x; }

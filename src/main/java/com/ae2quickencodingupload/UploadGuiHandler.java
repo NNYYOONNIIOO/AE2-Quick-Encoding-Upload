@@ -1,6 +1,7 @@
 package com.ae2quickencodingupload;
 
 import com.ae2quickencoding.client.ClientHandler;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.inventory.GuiContainer;
@@ -14,19 +15,20 @@ import net.minecraftforge.fml.relauncher.SideOnly;
 import java.lang.reflect.Field;
 import java.util.List;
 
+/** Adds and maintains the upload control on every pattern-terminal GUI rebuild. */
 @SideOnly(Side.CLIENT)
 public final class UploadGuiHandler {
+    private static final int BUTTON_ID = 0xAE2001;
+
     @SubscribeEvent
     public void onInit(GuiScreenEvent.InitGuiEvent.Post event) {
         GuiScreen gui = event.getGui();
         if (!isPatternGui(gui)) {
             return;
         }
-        UploadButton button = find(event.getButtonList());
-        if (button == null) {
-            button = new UploadButton(0, 0);
-            event.getButtonList().add(button);
-        }
+        removeUploadButtons(event.getButtonList());
+        UploadButton button = new UploadButton(0, 0);
+        event.getButtonList().add(button);
         sync(gui, button);
         UploadNetwork.sendAutomaticState(AutoUploadSettings.isEnabled());
     }
@@ -53,7 +55,12 @@ public final class UploadGuiHandler {
         if (!isPatternGui(gui)) {
             return;
         }
-        UploadButton button = find(buttonList(gui));
+        List<GuiButton> buttons = buttonList(gui);
+        UploadButton button = find(buttons);
+        if (button == null && buttons != null) {
+            button = new UploadButton(0, 0);
+            buttons.add(button);
+        }
         if (button != null) {
             sync(gui, button);
         }
@@ -68,7 +75,7 @@ public final class UploadGuiHandler {
                 return true;
             }
         } catch (Throwable ignored) {
-            // Keep compatibility with different quick-encoding releases.
+            // Compatibility with quick-encoding releases with different client APIs.
         }
         String name = gui.getClass().getName();
         return name.contains("GuiPatternTerm") || name.contains("GuiProcessingPatternTerm");
@@ -82,31 +89,31 @@ public final class UploadGuiHandler {
         }
     }
 
-    /** Places the button at the right of the lower item grid, matching the red-box location. */
     private static void sync(GuiScreen gui, UploadButton button) {
         button.setState(isSettingsMode(gui), AutoUploadSettings.isEnabled());
         int left = readInt(gui, "guiLeft", 0);
         int top = readInt(gui, "guiTop", 0);
         int width = readInt(gui, "xSize", 176);
-        int height = readInt(gui, "ySize", 166);
-        int lowerGridY = findLowerItemGridY(gui, height);
         button.x = left + width + 8;
-        button.y = top + lowerGridY;
+        button.y = top + findPatternInventoryTop(gui);
+        button.visible = true;
+        button.enabled = true;
     }
 
-    private static int findLowerItemGridY(GuiScreen gui, int guiHeight) {
+    private static int findPatternInventoryTop(GuiScreen gui) {
         Container container = findContainer(gui);
-        int best = Integer.MAX_VALUE;
         if (container != null) {
-            int threshold = guiHeight / 2;
+            int best = Integer.MAX_VALUE;
             for (Slot slot : container.inventorySlots) {
-                String name = slot.getClass().getName();
-                if (name.contains("SlotME") && slot.yPos >= threshold && slot.yPos < best) {
-                    best = slot.yPos;
+                if (slot.getClass().getName().contains("SlotME") && slot.yPos >= 80) {
+                    best = Math.min(best, slot.yPos);
                 }
             }
+            if (best != Integer.MAX_VALUE) {
+                return best;
+            }
         }
-        return best == Integer.MAX_VALUE ? Math.max(0, guiHeight - 140) : best;
+        return readInt(gui, "ySize", 166);
     }
 
     private static Container findContainer(GuiScreen gui) {
@@ -122,19 +129,27 @@ public final class UploadGuiHandler {
                         return (Container) value;
                     }
                 } catch (IllegalAccessException | SecurityException ignored) {
-                    // Continue through the GUI fields.
+                    // Continue looking for the container.
                 }
             }
         }
         return null;
     }
 
+    private static void removeUploadButtons(List<GuiButton> buttons) {
+        if (buttons == null) {
+            return;
+        }
+        buttons.removeIf(button -> button instanceof UploadButton || button.id == BUTTON_ID);
+    }
+
     private static UploadButton find(List<GuiButton> buttons) {
-        if (buttons != null) {
-            for (GuiButton button : buttons) {
-                if (button instanceof UploadButton) {
-                    return (UploadButton) button;
-                }
+        if (buttons == null) {
+            return null;
+        }
+        for (GuiButton button : buttons) {
+            if (button instanceof UploadButton) {
+                return (UploadButton) button;
             }
         }
         return null;
@@ -159,7 +174,7 @@ public final class UploadGuiHandler {
                 Object value = field.get(object);
                 return value instanceof Number ? ((Number) value).intValue() : fallback;
             } catch (NoSuchFieldException ignored) {
-                // Continue through the GUI hierarchy.
+                // Continue through the hierarchy.
             } catch (IllegalAccessException | SecurityException ignored) {
                 return fallback;
             }
