@@ -25,7 +25,7 @@ public abstract class MixinJeiModRegistry {
             at = @At("HEAD"), remap = false, require = 0)
     private void ae2QuickEncodingUpload$captureRecipeCatalystTableAtHead(
             IngredientRegistry ingredientRegistry,
-            CallbackInfo callback) {
+            CallbackInfoReturnable<RecipeRegistry> callback) {
         RecipeCatalystResolver.captureModRegistry(this);
     }
 
