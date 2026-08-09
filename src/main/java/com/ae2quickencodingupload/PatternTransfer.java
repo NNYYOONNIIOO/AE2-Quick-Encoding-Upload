@@ -206,20 +206,22 @@ public final class PatternTransfer {
             }
 
             SlotDisconnected disconnected = (SlotDisconnected) slot;
-            ClientDCInternalInv clientInventory = disconnected.getSlot();
-            if (clientInventory == null) {
+            ClientDCInternalInv slotInventory = disconnected.getSlot();
+            if (slotInventory == null) {
                 continue;
             }
 
-            long trackerId = clientInventory.getId();
+            long trackerId = slotInventory.getId();
+            ClientDCInternalInv guiInventory = findGuiInventory(trackerId);
+            ClientDCInternalInv clientInventory = guiInventory == null ? slotInventory : guiInventory;
             String displayName = clientInventory.getName();
             String unlocalizedName = clientInventory.getUnlocalizedName();
-            LOGGER.info("[AE2QuickEncodingUpload] candidate interface id={} displayName={} unlocalizedName={} processingFirst={}",
-                    trackerId, displayName, unlocalizedName, processingFirst);
+            LOGGER.info("[AE2QuickEncodingUpload] candidate interface id={} displayName={} unlocalizedName={} source={} processingFirst={}",
+                    trackerId, displayName, unlocalizedName, guiInventory == null ? "slot" : "gui", processingFirst);
             if (matchesMetadata(metadata, displayName, processingFirst)
                     || matchesMetadata(metadata, unlocalizedName, processingFirst)) {
-                LOGGER.info("[AE2QuickEncodingUpload] selected interface id={} displayName={} unlocalizedName={} processingFirst={}",
-                        trackerId, displayName, unlocalizedName, processingFirst);
+                LOGGER.info("[AE2QuickEncodingUpload] selected interface id={} displayName={} unlocalizedName={} source={} processingFirst={}",
+                        trackerId, displayName, unlocalizedName, guiInventory == null ? "slot" : "gui", processingFirst);
                 return new InterfaceTarget(trackerId, disconnected);
             }
         }
@@ -247,6 +249,47 @@ public final class PatternTransfer {
                     return new InterfaceTarget(trackerId, emptySlot);
                 }
             }
+        }
+        return null;
+    }
+
+    /**
+     * The terminal GUI owns the synchronized ClientDCInternalInv objects.
+     * Some AE2 builds leave the objects attached to container slots with the
+     * placeholder name "Nothing", so resolve the same id through the GUI
+     * map before comparing names.
+     */
+    private static ClientDCInternalInv findGuiInventory(long id) {
+        try {
+            Class<?> minecraftClass = Class.forName("net.minecraft.client.Minecraft");
+            Object minecraft = minecraftClass.getMethod("getMinecraft").invoke(null);
+            Field screenField = minecraftClass.getDeclaredField("currentScreen");
+            screenField.setAccessible(true);
+            Object screen = screenField.get(minecraft);
+            if (screen == null) {
+                return null;
+            }
+
+            for (Class<?> type = screen.getClass(); type != null; type = type.getSuperclass()) {
+                for (Field field : type.getDeclaredFields()) {
+                    if (!Map.class.isAssignableFrom(field.getType())) {
+                        continue;
+                    }
+                    field.setAccessible(true);
+                    Object value = field.get(screen);
+                    if (!(value instanceof Map)) {
+                        continue;
+                    }
+                    for (Object candidate : ((Map<?, ?>) value).values()) {
+                        if (candidate instanceof ClientDCInternalInv
+                                && ((ClientDCInternalInv) candidate).getId() == id) {
+                            return (ClientDCInternalInv) candidate;
+                        }
+                    }
+                }
+            }
+        } catch (ReflectiveOperationException | SecurityException ignored) {
+            // The GUI is client-only; keep the common routing class safe elsewhere.
         }
         return null;
     }
@@ -341,7 +384,7 @@ public final class PatternTransfer {
         if (normalized.contains("smelting") || normalized.equals("smelt")
                 || normalized.equals("furnace") || normalized.equals("minecraftfurnace")
                 || normalized.equals("\u7194\u7089") || normalized.equals("\u70e7\u5236")
-                || normalized.equals("\u7194\u70bc")) {
+                || normalized.equals("\u70e7\u70bc") || normalized.equals("\u7194\u70bc")) {
             return "smelting";
         }
         if (normalized.contains("brewing") || normalized.equals("brew")
