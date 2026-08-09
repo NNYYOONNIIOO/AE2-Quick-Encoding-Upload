@@ -692,6 +692,10 @@ public final class PatternTransfer {
 
     private static String normalize(String value) {
         return value == null ? "" : value.toLowerCase(Locale.ROOT)
+                // Remove Minecraft formatting codes before removing punctuation.
+                // Otherwise "锇压缩机§r" becomes "锇压缩机r" and cannot match
+                // the same interface name without the reset code.
+                .replaceAll("(?i)§[0-9a-fk-or]", "")
                 .replaceAll("[^\\p{L}\\p{N}]", "");
     }
 
