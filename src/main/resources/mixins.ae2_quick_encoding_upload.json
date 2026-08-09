@@ -16,7 +16,8 @@
   ],
   "client": [
     "MixinRecipeBookmarkCatalog",
-    "MixinGuiInterfaceTerminal"
+    "MixinGuiInterfaceTerminal",
+    "MixinItemEncodedPatternTooltip"
   ],
   "injectors": {
     "defaultRequire": 1
