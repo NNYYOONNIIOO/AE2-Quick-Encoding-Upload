@@ -16,6 +16,8 @@
   ],
   "client": [
     "MixinClientHandler",
+    "MixinGuiPatternTerm",
+    "MixinGuiExpandedProcessingPatternTerm",
     "MixinRecipeBookmarkCatalog",
     "MixinGuiInterfaceTerminal",
     "MixinItemEncodedPatternTooltip",

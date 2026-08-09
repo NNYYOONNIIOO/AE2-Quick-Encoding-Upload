@@ -8,11 +8,13 @@ import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.text.translation.I18n;
 
-/** A real AE2 GUI button maintained by the quick-encoding GUI lifecycle. */
+/** Upload button using AE2's native left-side button background and a transparent icon. */
 public final class UploadButton extends GuiButton implements ITooltip {
     private static final int SIZE = 16;
-    private static final ResourceLocation AE2_BUTTON_BACKGROUND = new ResourceLocation(
-            "ae2_quick_encoding", "textures/guis/set.png");
+    private static final ResourceLocation AE2_BUTTONS = new ResourceLocation(
+            "appliedenergistics2", "textures/guis/states.png");
+    private static final int AE2_TEXTURE_SIZE = 256;
+    private static final int AE2_BUTTON_BACKGROUND_UV = AE2_TEXTURE_SIZE - SIZE;
     private static final ResourceLocation MANUAL = new ResourceLocation(
             AE2QuickEncodingUpload.MODID, "textures/guis/upload.png");
     private static final ResourceLocation ENABLED = new ResourceLocation(
@@ -40,9 +42,10 @@ public final class UploadButton extends GuiButton implements ITooltip {
         }
 
         float brightness = this.enabled ? 1.0F : 0.5F;
-        minecraft.getTextureManager().bindTexture(AE2_BUTTON_BACKGROUND);
+        minecraft.getTextureManager().bindTexture(AE2_BUTTONS);
         GlStateManager.color(brightness, brightness, brightness, 1.0F);
-        this.drawModalRectWithCustomSizedTexture(this.x, this.y, 0, 0, SIZE, SIZE, SIZE, SIZE);
+        this.drawTexturedModalRect(this.x, this.y,
+                AE2_BUTTON_BACKGROUND_UV, AE2_BUTTON_BACKGROUND_UV, SIZE, SIZE);
 
         GlStateManager.enableBlend();
         GlStateManager.tryBlendFuncSeparate(
@@ -53,7 +56,8 @@ public final class UploadButton extends GuiButton implements ITooltip {
         );
         minecraft.getTextureManager().bindTexture(this.settingsMode
                 ? (this.automaticEnabled ? ENABLED : DISABLED) : MANUAL);
-        Gui.drawModalRectWithCustomSizedTexture(this.x, this.y, 0, 0, SIZE, SIZE, SIZE, SIZE);
+        Gui.drawModalRectWithCustomSizedTexture(this.x, this.y, 0, 0,
+                SIZE, SIZE, SIZE, SIZE);
         GlStateManager.disableBlend();
 
         this.hovered = mouseX >= this.x && mouseY >= this.y
@@ -72,28 +76,9 @@ public final class UploadButton extends GuiButton implements ITooltip {
                 : "ae2_quick_encoding_upload.gui.auto_upload.disabled");
     }
 
-    @Override
-    public int xPos() {
-        return this.x;
-    }
-
-    @Override
-    public int yPos() {
-        return this.y;
-    }
-
-    @Override
-    public int getWidth() {
-        return this.width;
-    }
-
-    @Override
-    public int getHeight() {
-        return this.height;
-    }
-
-    @Override
-    public boolean isVisible() {
-        return this.visible;
-    }
+    @Override public int xPos() { return this.x; }
+    @Override public int yPos() { return this.y; }
+    @Override public int getWidth() { return this.width; }
+    @Override public int getHeight() { return this.height; }
+    @Override public boolean isVisible() { return this.visible; }
 }
