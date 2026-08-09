@@ -3,6 +3,7 @@ package com.ae2quickencodingupload.mixin;
 import com.ae2quickencoding.client.RecipeEntry;
 import com.ae2quickencoding.model.PatternData;
 import com.ae2quickencodingupload.MachineMetadata;
+import com.ae2quickencodingupload.RecipeCatalystResolver;
 import com.ae2quickencodingupload.PatternMachineDataAccess;
 import mezz.jei.api.recipe.IRecipeCategory;
 import mezz.jei.api.recipe.IRecipeWrapper;
@@ -29,6 +30,10 @@ public abstract class MixinRecipeBookmarkCatalog {
         }
         PatternData data = entry.getPatternData();
         NBTTagCompound machineData = MachineMetadata.from(category);
+        if (machineData != null && machineData.hasKey("CategoryUid", 8)) {
+            RecipeCatalystResolver.appendMachineAliases(
+                    machineData, machineData.getString("CategoryUid"));
+        }
         Object rawData = data;
         if (rawData instanceof PatternMachineDataAccess && machineData != null && !machineData.hasNoTags()) {
             ((PatternMachineDataAccess) rawData).ae2QuickEncodingUpload$setMachineData(machineData);

@@ -106,11 +106,7 @@ public final class PatternTransfer {
 
         InterfaceTarget target;
         if (craftingPattern) {
-            target = machineData != null && !machineData.hasNoTags()
-                    ? findInterfaceTarget(container, machineData, true) : null;
-            if (target == null) {
-                target = findCraftingInterfaceTarget(container);
-            }
+            target = findCraftingInterfaceTarget(container);
         } else {
             target = findInterfaceTarget(container, machineData, true);
             if (target == null) {
@@ -244,7 +240,8 @@ public final class PatternTransfer {
         List<ClientDCInternalInv> allInterfaces = findGuiInventories();
 
         for (ClientDCInternalInv clientInventory : allInterfaces) {
-            if (!hasFreePatternSlot(clientInventory) || !hasCraftingPattern(clientInventory)) {
+            if (isPlaceholderInterface(clientInventory)
+                    || !hasFreePatternSlot(clientInventory) || !hasCraftingPattern(clientInventory)) {
                 continue;
             }
             long id = clientInventory.getId();
@@ -254,7 +251,7 @@ public final class PatternTransfer {
         }
 
         for (ClientDCInternalInv clientInventory : allInterfaces) {
-            if (!hasFreePatternSlot(clientInventory)) {
+            if (isPlaceholderInterface(clientInventory) || !hasFreePatternSlot(clientInventory)) {
                 continue;
             }
             String displayName = clientInventory.getName();
@@ -307,6 +304,9 @@ public final class PatternTransfer {
         String categoryUid = getCategoryUid(machineData);
         if (!categoryUid.isEmpty()) {
             List<ItemStack> catalysts = RecipeCatalystResolver.getCatalysts(categoryUid);
+            // Also upgrade older patterns in memory with the exact HEI-left-list
+            // machine aliases before the explicit category match/fallback.
+            RecipeCatalystResolver.appendMachineAliases(machineData, categoryUid);
             LOGGER.info("[AE2QuickEncodingUpload] category={} registered catalyst count={}",
                     categoryUid, catalysts.size());
             InterfaceTarget categoryTarget = findCategoryCatalystTarget(container, categoryUid, catalysts);
@@ -330,7 +330,7 @@ public final class PatternTransfer {
         List<ClientDCInternalInv> allInterfaces = findGuiInventories();
         LOGGER.info("[AE2QuickEncodingUpload] synchronized interface count={}", allInterfaces.size());
         for (ClientDCInternalInv clientInventory : allInterfaces) {
-            if (!hasFreePatternSlot(clientInventory)) {
+            if (isPlaceholderInterface(clientInventory) || !hasFreePatternSlot(clientInventory)) {
                 continue;
             }
 
@@ -357,6 +357,9 @@ public final class PatternTransfer {
             for (Map.Entry<?, ?> entry : trackers.entrySet()) {
                 Object tracker = entry.getValue();
                 String interfaceName = readStringField(tracker, "unlocalizedName", "termName");
+                if ("nothing".equals(normalize(interfaceName))) {
+                    continue;
+                }
                 if (!matchesMetadata(metadata, interfaceName, processingFirst)) {
                     continue;
                 }
@@ -385,7 +388,7 @@ public final class PatternTransfer {
             return null;
         }
         for (ClientDCInternalInv clientInventory : findGuiInventories()) {
-            if (!hasFreePatternSlot(clientInventory)) {
+            if (isPlaceholderInterface(clientInventory) || !hasFreePatternSlot(clientInventory)) {
                 continue;
             }
             boolean matches = RecipeCatalystResolver.matchesAny(catalysts, clientInventory);
@@ -400,6 +403,14 @@ public final class PatternTransfer {
             }
         }
         return null;
+    }
+
+    private static boolean isPlaceholderInterface(ClientDCInternalInv inventory) {
+        if (inventory == null) {
+            return true;
+        }
+        return "nothing".equals(normalize(inventory.getName()))
+                && "nothing".equals(normalize(inventory.getUnlocalizedName()));
     }
 
     private static boolean matchesStoredPatternForCategory(ClientDCInternalInv clientInventory,
