@@ -682,9 +682,7 @@ public final class PatternTransfer {
             for (String second : right) {
                 String normalizedSecond = normalize(second);
                 if (!normalizedSecond.isEmpty()
-                        && (normalizedFirst.equals(normalizedSecond)
-                        || normalizedFirst.contains(normalizedSecond)
-                        || normalizedSecond.contains(normalizedFirst))) {
+                        && normalizedFirst.equals(normalizedSecond)) {
                     return true;
                 }
             }
