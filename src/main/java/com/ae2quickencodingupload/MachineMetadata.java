@@ -10,6 +10,7 @@ import net.minecraft.nbt.NBTTagString;
 import net.minecraft.util.ResourceLocation;
 
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
@@ -23,7 +24,6 @@ public final class MachineMetadata {
         if (category == null) {
             return null;
         }
-
         String uid = safeUid(category);
         String title = safeTitle(category);
         String categoryKey = (uid + " " + title).toLowerCase(Locale.ROOT);
@@ -37,33 +37,49 @@ public final class MachineMetadata {
         add(methods, uid);
         add(methods, path(uid));
 
-        if (containsAny(categoryKey, "smelt", "烧制", "熔炼")) {
+        if (containsAny(categoryKey, "smelt", "smelting", "\u7194\u7089", "\u70e7\u5236", "\u70e7\u70bc", "\u7194\u70bc")) {
             addKnownMachine(Blocks.FURNACE, machineNames);
             add(methods, "smelting");
             add(methods, "smelt");
-            add(methods, "烧制");
-            add(methods, "熔炼");
+            add(methods, "\u70e7\u5236");
+            add(methods, "\u70e7\u70bc");
             add(machineNames, "furnace");
-            add(machineNames, "熔炉");
-        } else if (containsAny(categoryKey, "brew", "酿造")) {
+            add(machineNames, "\u7194\u7089");
+        } else if (containsAny(categoryKey, "brew", "brewing", "\u917f\u9020")) {
             addKnownMachine(Blocks.BREWING_STAND, machineNames);
             add(methods, "brewing");
             add(methods, "brew");
-            add(methods, "酿造");
+            add(methods, "\u917f\u9020");
             add(machineNames, "brewing stand");
-            add(machineNames, "酿造台");
-        } else if (containsAny(categoryKey, "anvil", "铁砧")) {
+            add(machineNames, "\u917f\u9020\u53f0");
+        } else if (containsAny(categoryKey, "anvil", "\u94c1\u7827")) {
             addKnownMachine(Blocks.ANVIL, machineNames);
             add(methods, "anvil");
-            add(methods, "铁砧");
             add(machineNames, "anvil");
-            add(machineNames, "铁砧");
+            add(machineNames, "\u94c1\u7827");
         }
 
-        // Third-party JEI categories commonly use their machine name as the title.
         add(machineNames, title);
         add(machineNames, uid);
         add(machineNames, path(uid));
+        try {
+            List<ItemStack> catalysts = RecipeCatalystResolver.getCatalysts(uid);
+            if (catalysts != null) {
+                for (ItemStack catalyst : catalysts) {
+                    if (catalyst == null || catalyst.isEmpty()) {
+                        continue;
+                    }
+                    add(machineNames, catalyst.getDisplayName());
+                    ResourceLocation registryName = catalyst.getItem().getRegistryName();
+                    if (registryName != null) {
+                        add(machineNames, registryName.toString());
+                        add(machineNames, registryName.getResourcePath());
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            // Catalyst capture is optional; the category and title remain usable.
+        }
         if (methods.isEmpty() && machineNames.isEmpty()) {
             return null;
         }
@@ -86,7 +102,7 @@ public final class MachineMetadata {
         return value.contains("minecraft.crafting")
                 || value.contains("minecraft:crafting")
                 || value.contains("crafting")
-                || value.contains("合成");
+                || value.contains("\u5408\u6210");
     }
 
     private static boolean containsAny(String value, String... terms) {
