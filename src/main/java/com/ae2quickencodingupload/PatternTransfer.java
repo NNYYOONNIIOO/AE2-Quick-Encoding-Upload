@@ -4,6 +4,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import appeng.api.implementations.ICraftingPatternItem;
+import appeng.client.me.ClientDCInternalInv;
 import appeng.client.me.SlotDisconnected;
 import appeng.container.slot.AppEngSlot;
 import appeng.container.slot.SlotFake;
@@ -195,27 +196,31 @@ public final class PatternTransfer {
             return null;
         }
 
-        // ContainerInterfaceTerminal synchronizes the remote interfaces in
-        // data["=id"].un. Use that client-side snapshot first: it is the same
-        // id that SlotDisconnected exposes to PacketInventoryAction.
-        NBTTagCompound interfaceData = readInterfaceData(container);
-        if (interfaceData != null) {
-            for (Slot slot : container.inventorySlots) {
-                if (!(slot instanceof SlotDisconnected) || slot.getHasStack()) {
-                    continue;
-                }
-                long trackerId = disconnectedSlotId((SlotDisconnected) slot);
-                if (trackerId == Long.MIN_VALUE) {
-                    continue;
-                }
-                String key = "=" + Long.toString(trackerId, Character.MAX_RADIX);
-                if (!interfaceData.hasKey(key, 10)) {
-                    continue;
-                }
-                String interfaceName = interfaceData.getCompoundTag(key).getString("un");
-                if (matchesMetadata(metadata, interfaceName, processingFirst)) {
-                    return new InterfaceTarget(trackerId, (SlotDisconnected) slot);
-                }
+        // On the client, ContainerInterfaceTerminal.data is not populated by
+        // PacketCompressedNBT. AE2 applies that packet to GuiInterfaceTerminal,
+        // which creates the ClientDCInternalInv held by each SlotDisconnected.
+        // Read the synchronized display and unlocalized names from that object.
+        for (Slot slot : container.inventorySlots) {
+            if (!(slot instanceof SlotDisconnected) || slot.getHasStack()) {
+                continue;
+            }
+
+            SlotDisconnected disconnected = (SlotDisconnected) slot;
+            ClientDCInternalInv clientInventory = disconnected.getSlot();
+            if (clientInventory == null) {
+                continue;
+            }
+
+            long trackerId = clientInventory.getId();
+            String displayName = clientInventory.getName();
+            String unlocalizedName = clientInventory.getUnlocalizedName();
+            LOGGER.info("[AE2QuickEncodingUpload] candidate interface id={} displayName={} unlocalizedName={} processingFirst={}",
+                    trackerId, displayName, unlocalizedName, processingFirst);
+            if (matchesMetadata(metadata, displayName, processingFirst)
+                    || matchesMetadata(metadata, unlocalizedName, processingFirst)) {
+                LOGGER.info("[AE2QuickEncodingUpload] selected interface id={} displayName={} unlocalizedName={} processingFirst={}",
+                        trackerId, displayName, unlocalizedName, processingFirst);
+                return new InterfaceTarget(trackerId, disconnected);
             }
         }
 
