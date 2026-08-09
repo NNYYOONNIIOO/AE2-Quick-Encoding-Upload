@@ -310,6 +310,7 @@ public final class PatternTransfer {
         // whose INTERFACE_TERMINAL setting allows them to appear in this terminal.
         List<ClientDCInternalInv> allInterfaces = findGuiInventories();
         LOGGER.info("[AE2QuickEncodingUpload] synchronized interface count={}", allInterfaces.size());
+        InterfaceTarget capabilityTarget = null;
         for (ClientDCInternalInv clientInventory : allInterfaces) {
             if (!hasFreePatternSlot(clientInventory)) {
                 continue;
@@ -318,18 +319,32 @@ public final class PatternTransfer {
             long trackerId = clientInventory.getId();
             String displayName = clientInventory.getName();
             String unlocalizedName = clientInventory.getUnlocalizedName();
-            boolean matches = matchesMetadata(metadata, displayName, processingFirst)
+            boolean exactMatch = matchesMetadata(metadata, displayName, processingFirst)
                     || matchesMetadata(metadata, unlocalizedName, processingFirst)
                     || matchesStoredPattern(clientInventory, machineData, processingFirst);
-            LOGGER.info("[AE2QuickEncodingUpload] candidate interface id={} displayName={} unlocalizedName={} matches={} processingFirst={}",
-                    trackerId, displayName, unlocalizedName, matches, processingFirst);
+            boolean capabilityMatch = processingFirst
+                    && (matchesGenericProcessingCapability(metadata, displayName)
+                    || matchesGenericProcessingCapability(metadata, unlocalizedName));
+            boolean matches = exactMatch || capabilityMatch;
+            LOGGER.info("[AE2QuickEncodingUpload] candidate interface id={} displayName={} unlocalizedName={} matches={} exactMatch={} capabilityMatch={} processingFirst={}",
+                    trackerId, displayName, unlocalizedName, matches, exactMatch, capabilityMatch, processingFirst);
             if (matches) {
                 LOGGER.info("[AE2QuickEncodingUpload] selected interface id={} displayName={} unlocalizedName={} processingFirst={}",
                         trackerId, displayName, unlocalizedName, processingFirst);
                 // The entry may be outside the currently rendered page. The server
                 // uses this synchronized id to insert into the first free pattern slot.
-                return new InterfaceTarget(trackerId, findEmptyDisconnectedSlot(container, trackerId));
+                InterfaceTarget candidateTarget = new InterfaceTarget(trackerId,
+                        findEmptyDisconnectedSlot(container, trackerId));
+                if (exactMatch) {
+                    return candidateTarget;
+                }
+                if (capabilityTarget == null) {
+                    capabilityTarget = candidateTarget;
+                }
             }
+        }
+        if (capabilityTarget != null) {
+            return capabilityTarget;
         }
         // Keep the tracker-map path as a compatibility fallback for AE2
         // builds that do not expose the synchronized data under this name.
@@ -535,6 +550,102 @@ public final class PatternTransfer {
             }
         }
         return intersects(metadata, Collections.singleton(candidate));
+    }
+
+    /**
+     * Matches a processing operation against a generic tiered-capability name.
+     * For example, a localized name such as "终极压缩工厂" and an internal name
+     * such as "tile.Compressing.Ultimate.Factory" both describe a tiered
+     * compression capability. This deliberately does not contain mod names or
+     * machine-specific aliases; exact aliases and stored patterns still win.
+     */
+    private static boolean matchesGenericProcessingCapability(List<String> metadata,
+                                                              String candidate) {
+        if (!isCapabilityVariantName(candidate)) {
+            return false;
+        }
+
+        Set<String> roots = capabilityRoots(candidate);
+        for (String root : roots) {
+            for (String value : metadata) {
+                if (normalize(value).contains(root)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean isCapabilityVariantName(String value) {
+        String normalized = normalize(value);
+        return normalized.contains("factory") || normalized.contains("machine")
+                || normalized.contains("processor") || normalized.contains("plant")
+                || normalized.contains("device") || normalized.contains("equipment")
+                || normalized.contains("basic") || normalized.contains("advanced")
+                || normalized.contains("elite") || normalized.contains("ultimate")
+                || normalized.contains("tier") || normalized.contains("工厂")
+                || normalized.contains("机器") || normalized.contains("设备")
+                || normalized.contains("装置") || normalized.contains("基础")
+                || normalized.contains("高级") || normalized.contains("精英")
+                || normalized.contains("终极");
+    }
+
+    private static Set<String> capabilityRoots(String value) {
+        Set<String> roots = new LinkedHashSet<>();
+        if (value == null) {
+            return roots;
+        }
+
+        String splitValue = value.replaceAll("([a-z])([A-Z])", "$1 $2");
+        for (String part : splitValue.split("[^\\p{L}\\p{N}]+")) {
+            String normalizedPart = normalize(part);
+            if (!normalizedPart.isEmpty() && !isGenericCapabilityWord(normalizedPart)) {
+                addCapabilityRoot(roots, normalizedPart);
+            }
+        }
+
+        String residual = normalize(value);
+        String[] genericWords = new String[]{
+                "tile", "block", "factory", "machine", "processor", "plant", "device",
+                "equipment", "basic", "advanced", "elite", "ultimate", "tier",
+                "工厂", "机器", "设备", "装置", "基础", "高级", "精英", "终极"
+        };
+        for (String genericWord : genericWords) {
+            residual = residual.replace(genericWord, "");
+        }
+        addCapabilityRoot(roots, residual);
+        return roots;
+    }
+
+    private static boolean isGenericCapabilityWord(String value) {
+        return value.equals("tile") || value.equals("block") || value.equals("factory")
+                || value.equals("machine") || value.equals("processor") || value.equals("plant")
+                || value.equals("device") || value.equals("equipment") || value.equals("basic")
+                || value.equals("advanced") || value.equals("elite") || value.equals("ultimate")
+                || value.equals("tier") || value.equals("工厂") || value.equals("机器")
+                || value.equals("设备") || value.equals("装置") || value.equals("基础")
+                || value.equals("高级") || value.equals("精英") || value.equals("终极");
+    }
+
+    private static void addCapabilityRoot(Set<String> roots, String value) {
+        if (value == null || value.isEmpty()) {
+            return;
+        }
+        String root = stemCapabilityWord(value);
+        boolean hasLatin = root.matches(".*[a-z].*");
+        if ((hasLatin && root.length() >= 4) || (!hasLatin && root.length() >= 2)) {
+            roots.add(root);
+        }
+    }
+
+    private static String stemCapabilityWord(String value) {
+        String[] suffixes = new String[]{"tion", "sion", "ment", "ing", "ers", "er", "or", "ed"};
+        for (String suffix : suffixes) {
+            if (value.endsWith(suffix) && value.length() > suffix.length() + 3) {
+                return value.substring(0, value.length() - suffix.length());
+            }
+        }
+        return value;
     }
 
     /**
