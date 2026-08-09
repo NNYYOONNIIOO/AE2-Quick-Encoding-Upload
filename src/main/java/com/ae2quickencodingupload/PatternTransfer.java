@@ -162,7 +162,9 @@ public final class PatternTransfer {
     }
 
     private static boolean isInterfaceTerminalContainer(Container container) {
-        return container.getClass().getName().endsWith("ContainerInterfaceTerminal");
+        String name = container.getClass().getName();
+        return name.endsWith(".ContainerInterfaceTerminal")
+                || name.endsWith(".ContainerWirelessInterfaceTerminal");
     }
 
     private static boolean isPlayerSlot(Slot slot, EntityPlayer player) {
@@ -186,12 +188,37 @@ public final class PatternTransfer {
             return null;
         }
 
+        // ContainerInterfaceTerminal synchronizes the remote interfaces in
+        // data["=id"].un. Use that client-side snapshot first: it is the same
+        // id that SlotDisconnected exposes to PacketInventoryAction.
+        NBTTagCompound interfaceData = readInterfaceData(container);
+        if (interfaceData != null) {
+            for (Slot slot : container.inventorySlots) {
+                if (!(slot instanceof SlotDisconnected) || slot.getHasStack()) {
+                    continue;
+                }
+                long trackerId = disconnectedSlotId((SlotDisconnected) slot);
+                if (trackerId == Long.MIN_VALUE) {
+                    continue;
+                }
+                String key = "=" + Long.toString(trackerId, Character.MAX_RADIX);
+                if (!interfaceData.hasKey(key, 10)) {
+                    continue;
+                }
+                String interfaceName = interfaceData.getCompoundTag(key).getString("un");
+                if (matchesMetadata(metadata, interfaceName, processingFirst)) {
+                    return new InterfaceTarget(trackerId, (SlotDisconnected) slot);
+                }
+            }
+        }
+
+        // Keep the tracker-map path as a compatibility fallback for AE2
+        // builds that do not expose the synchronized data under this name.
         for (Map<?, ?> trackers : trackerMaps(container)) {
             for (Map.Entry<?, ?> entry : trackers.entrySet()) {
                 Object tracker = entry.getValue();
                 String interfaceName = readStringField(tracker, "unlocalizedName", "termName");
-                if (interfaceName.isEmpty()
-                        || !intersects(metadata, Collections.singleton(interfaceName))) {
+                if (!matchesMetadata(metadata, interfaceName, processingFirst)) {
                     continue;
                 }
 
@@ -233,13 +260,66 @@ public final class PatternTransfer {
         return result;
     }
 
+    private static NBTTagCompound readInterfaceData(Container container) {
+        Object value = readField(container, "data");
+        return value instanceof NBTTagCompound ? (NBTTagCompound) value : null;
+    }
+
+    private static long disconnectedSlotId(SlotDisconnected slot) {
+        Object backing = invokeNoArg(slot, "getSlot");
+        long id = readLong(invokeNoArg(backing, "getId"), Long.MIN_VALUE);
+        if (id == Long.MIN_VALUE) {
+            id = readLong(readField(backing, "id"), Long.MIN_VALUE);
+        }
+        return id;
+    }
+
+    private static boolean matchesMetadata(List<String> metadata, String candidate,
+                                           boolean processingFirst) {
+        if (candidate == null || candidate.trim().isEmpty()) {
+            return false;
+        }
+        if (processingFirst) {
+            String candidateFamily = processingFamily(candidate);
+            if (!candidateFamily.isEmpty()) {
+                for (String value : metadata) {
+                    if (candidateFamily.equals(processingFamily(value))) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return intersects(metadata, Collections.singleton(candidate));
+    }
+
+    /**
+     * Processing categories and interface names are different labels for the
+     * same machine. Normalize their well-known aliases into a shared family.
+     */
+    private static String processingFamily(String value) {
+        String normalized = normalize(value);
+        if (normalized.contains("smelting") || normalized.equals("smelt")
+                || normalized.equals("furnace") || normalized.equals("minecraftfurnace")
+                || normalized.equals("\u7194\u7089") || normalized.equals("\u70e7\u5236")
+                || normalized.equals("\u7194\u70bc")) {
+            return "smelting";
+        }
+        if (normalized.contains("brewing") || normalized.equals("brew")
+                || normalized.equals("\u917f\u9020") || normalized.equals("\u917f\u9020\u53f0")) {
+            return "brewing";
+        }
+        if (normalized.contains("anvil") || normalized.equals("\u94c1\u7827")) {
+            return "anvil";
+        }
+        return "";
+    }
+
     private static SlotDisconnected findEmptyDisconnectedSlot(Container container, long trackerId) {
         for (Slot slot : container.inventorySlots) {
             if (!(slot instanceof SlotDisconnected) || slot.getHasStack()) {
                 continue;
             }
-            Object backing = invokeNoArg(slot, "getSlot");
-            long slotId = readLong(invokeNoArg(backing, "getId"), Long.MIN_VALUE);
+            long slotId = disconnectedSlotId((SlotDisconnected) slot);
             if (slotId == trackerId) {
                 return (SlotDisconnected) slot;
             }
@@ -304,7 +384,13 @@ public final class PatternTransfer {
                 return null;
             }
         }
-        return null;
+        try {
+            Method method = object.getClass().getMethod(name);
+            method.setAccessible(true);
+            return method.invoke(object);
+        } catch (ReflectiveOperationException | SecurityException ignored) {
+            return null;
+        }
     }
 
     private static NBTTagCompound getMachineData(ItemStack stack) {
