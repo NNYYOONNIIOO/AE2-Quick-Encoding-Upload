@@ -8,7 +8,7 @@ import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.text.translation.I18n;
 
-/** The upload control rendered on top of the pattern terminal GUI. */
+/** A real AE2 GUI button maintained by the quick-encoding GUI lifecycle. */
 public final class UploadButton extends GuiButton implements ITooltip {
     private static final int SIZE = 16;
     private static final ResourceLocation AE2_BUTTON_BACKGROUND = new ResourceLocation(
@@ -35,40 +35,65 @@ public final class UploadButton extends GuiButton implements ITooltip {
 
     @Override
     public void drawButton(Minecraft minecraft, int mouseX, int mouseY, float partialTicks) {
-        if (!visible) {
+        if (!this.visible) {
             return;
         }
-        hovered = mouseX >= x && mouseY >= y && mouseX < x + width && mouseY < y + height;
-        GlStateManager.pushMatrix();
-        GlStateManager.enableBlend();
-        GlStateManager.enableAlpha();
-        GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
+
+        float brightness = this.enabled ? 1.0F : 0.5F;
         minecraft.getTextureManager().bindTexture(AE2_BUTTON_BACKGROUND);
-        Gui.drawModalRectWithCustomSizedTexture(x, y, 0.0F, 0.0F, SIZE, SIZE, SIZE, SIZE);
-        minecraft.getTextureManager().bindTexture(settingsMode
-                ? (automaticEnabled ? ENABLED : DISABLED) : MANUAL);
-        Gui.drawModalRectWithCustomSizedTexture(x, y, 0.0F, 0.0F, SIZE, SIZE, SIZE, SIZE);
-        GlStateManager.popMatrix();
+        GlStateManager.color(brightness, brightness, brightness, 1.0F);
+        this.drawModalRectWithCustomSizedTexture(this.x, this.y, 0, 0, SIZE, SIZE, SIZE, SIZE);
+
+        GlStateManager.enableBlend();
+        GlStateManager.tryBlendFuncSeparate(
+                GlStateManager.SourceFactor.SRC_ALPHA,
+                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA,
+                GlStateManager.SourceFactor.ONE,
+                GlStateManager.DestFactor.ZERO
+        );
+        minecraft.getTextureManager().bindTexture(this.settingsMode
+                ? (this.automaticEnabled ? ENABLED : DISABLED) : MANUAL);
+        Gui.drawModalRectWithCustomSizedTexture(this.x, this.y, 0, 0, SIZE, SIZE, SIZE, SIZE);
+        GlStateManager.disableBlend();
+
+        this.hovered = mouseX >= this.x && mouseY >= this.y
+                && mouseX < this.x + this.width && mouseY < this.y + this.height;
+        GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     @Override
     public String getMessage() {
-        return settingsMode
-                ? I18n.translateToLocal("ae2_quick_encoding_upload.gui.auto_upload")
-                : I18n.translateToLocal("ae2_quick_encoding_upload.gui.upload");
+        if (!this.settingsMode) {
+            return I18n.translateToLocal("ae2_quick_encoding_upload.gui.upload");
+        }
+        return I18n.translateToLocal("ae2_quick_encoding_upload.gui.auto_upload") + "\n"
+                + I18n.translateToLocal(this.automaticEnabled
+                ? "ae2_quick_encoding_upload.gui.auto_upload.enabled"
+                : "ae2_quick_encoding_upload.gui.auto_upload.disabled");
     }
 
-    public String getTooltipState() {
-        return I18n.translateToLocal(settingsMode
-                ? (automaticEnabled
-                        ? "ae2_quick_encoding_upload.gui.auto_upload.enabled"
-                        : "ae2_quick_encoding_upload.gui.auto_upload.disabled")
-                : "ae2_quick_encoding_upload.gui.upload");
+    @Override
+    public int xPos() {
+        return this.x;
     }
 
-    @Override public int xPos() { return x; }
-    @Override public int yPos() { return y; }
-    @Override public int getWidth() { return width; }
-    @Override public int getHeight() { return height; }
-    @Override public boolean isVisible() { return visible; }
+    @Override
+    public int yPos() {
+        return this.y;
+    }
+
+    @Override
+    public int getWidth() {
+        return this.width;
+    }
+
+    @Override
+    public int getHeight() {
+        return this.height;
+    }
+
+    @Override
+    public boolean isVisible() {
+        return this.visible;
+    }
 }
