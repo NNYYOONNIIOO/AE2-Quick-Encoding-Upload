@@ -2,7 +2,6 @@ package com.ae2quickencodingupload;
 
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.inventory.Container;
-import net.minecraft.inventory.Slot;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
@@ -19,16 +18,22 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/** Server-side movement of encoded patterns into all matching ME interfaces on the open grid. */
+/** Server-side movement of encoded patterns into matching ME interfaces on the player's AE2 network. */
 public final class PatternUploadService {
     private PatternUploadService() {
     }
 
     public static int uploadInventory(EntityPlayerMP player) {
-        if (player == null || player.openContainer == null || !isPatternContainer(player.openContainer)) {
+        if (player == null || !hasUploadableInventory(player)) {
             return 0;
         }
         Object grid = findGrid(player.openContainer);
+        if (grid == null) {
+            // The action is deliberately independent of the current GUI.  A pattern terminal,
+            // encoder, wireless terminal, or any other network-backed container may provide the
+            // player's current grid; the target interfaces are queried from that grid directly.
+            grid = findGrid(player);
+        }
         if (grid == null) {
             return 0;
         }
@@ -38,7 +43,6 @@ public final class PatternUploadService {
         }
         int moved = uploadList(player.inventory.mainInventory, targets);
         moved += uploadList(player.inventory.offHandInventory, targets);
-        moved += uploadContainerSlots(player, targets);
         if (moved > 0) {
             player.inventory.markDirty();
             player.inventoryContainer.detectAndSendChanges();
@@ -46,34 +50,18 @@ public final class PatternUploadService {
         return moved;
     }
 
-    private static int uploadContainerSlots(EntityPlayerMP player, List<InterfaceTarget> targets) {
-        if (player.openContainer == null || player.openContainer.inventorySlots == null) {
-            return 0;
-        }
-        int moved = 0;
-        for (Slot slot : player.openContainer.inventorySlots) {
-            if (slot == null) {
-                continue;
-            }
-            ItemStack source = slot.getStack();
-            if (!isUploadable(source)) {
-                continue;
-            }
-            int before = source.getCount();
-            ItemStack remaining = source.copy();
-            for (InterfaceTarget target : targets) {
-                if (remaining.isEmpty() || !matches(remaining, target)) {
-                    continue;
-                }
-                remaining = insertIntoEmptyPatternSlots(target.patterns, remaining);
-            }
-            if (remaining.getCount() < before) {
-                moved += before - remaining.getCount();
-                slot.putStack(remaining.isEmpty() ? ItemStack.EMPTY : remaining);
-                slot.onSlotChanged();
+    private static boolean hasUploadableInventory(EntityPlayerMP player) {
+        for (ItemStack stack : player.inventory.mainInventory) {
+            if (isUploadable(stack)) {
+                return true;
             }
         }
-        return moved;
+        for (ItemStack stack : player.inventory.offHandInventory) {
+            if (isUploadable(stack)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean isPatternContainer(Container container) {
@@ -343,13 +331,13 @@ public final class PatternUploadService {
                 .replaceAll("[^\\p{L}\\p{N}]", "");
     }
 
-    private static Object findGrid(Container container) {
-        return findGridDeep(container,
+    private static Object findGrid(Object source) {
+        return findGridDeep(source,
                 Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>()), 0);
     }
 
     private static Object findGridDeep(Object object, Set<Object> seen, int depth) {
-        if (object == null || depth > 6 || !seen.add(object)) {
+        if (object == null || depth > 12 || !seen.add(object)) {
             return null;
         }
         Object grid = findGridFrom(object);
@@ -431,12 +419,23 @@ public final class PatternUploadService {
         if (node == null) {
             node = invokeNoArg(object, "getGridNode");
         }
+        if (node == null) {
+            node = invokeNoArg(object, "getNode");
+        }
         grid = invokeNoArg(node, "getGrid");
         if (grid != null) {
             return grid;
         }
         Object proxy = invokeNoArg(object, "getProxy");
-        return invokeNoArg(proxy, "getGrid");
+        grid = invokeNoArg(proxy, "getGrid");
+        if (grid != null) {
+            return grid;
+        }
+        Object host = invokeNoArg(object, "getHost");
+        if (host != null && host != object) {
+            return findGridFrom(host);
+        }
+        return null;
     }
 
     private static IItemHandler asHandler(Object value) {
