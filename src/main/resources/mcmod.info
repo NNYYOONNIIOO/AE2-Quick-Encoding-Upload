@@ -1,0 +1,21 @@
+[
+{
+  "modid": "ae2_quick_encoding_upload",
+  "name": "AE2 Quick Encoding Upload",
+  "description": "Routes machine-aware AE2 Quick Encoding patterns into matching interface slots.",
+  "version": "${version}",
+  "mcversion": "${mcversion}",
+  "url": "",
+  "updateUrl": "",
+  "authorList": ["AE2 Quick Encoding Upload"],
+  "credits": "Applied Energistics 2, Had Enough Items and AE2 Quick Encoding",
+  "logoFile": "",
+  "screenshots": [],
+  "dependencies": [
+    "required-after:forge",
+    "required-after:appliedenergistics2",
+    "required-after:had-enough-items",
+    "required-after:ae2_quick_encoding"
+  ]
+}
+]
