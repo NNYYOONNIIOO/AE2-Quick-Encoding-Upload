@@ -25,7 +25,6 @@ public final class AE2QuickEncodingUpload {
     public void preInit(FMLPreInitializationEvent event) {
         AutoUploadSettings.init(event.getSuggestedConfigurationFile());
         UploadNetwork.init();
-        MinecraftForge.EVENT_BUS.register(new UploadServerHandler());
         if (FMLCommonHandler.instance().getSide() == Side.CLIENT) {
             MinecraftForge.EVENT_BUS.register(new UploadGuiHandler());
         }

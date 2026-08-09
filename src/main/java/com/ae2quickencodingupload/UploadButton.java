@@ -24,6 +24,7 @@ public final class UploadButton extends GuiButton implements ITooltip {
 
     private boolean settingsMode;
     private boolean automaticEnabled;
+    private boolean directAction;
 
     public UploadButton(int x, int y) {
         super(0xAE2001, x, y, SIZE, SIZE, "");
@@ -33,6 +34,26 @@ public final class UploadButton extends GuiButton implements ITooltip {
     public void setState(boolean settingsMode, boolean automaticEnabled) {
         this.settingsMode = settingsMode;
         this.automaticEnabled = automaticEnabled;
+    }
+
+    @Override
+    public boolean mousePressed(Minecraft minecraft, int mouseX, int mouseY) {
+        if (!super.mousePressed(minecraft, mouseX, mouseY)) {
+            return false;
+        }
+        UploadClientActions.handleDirect(
+                minecraft == null ? null : minecraft.currentScreen, this);
+        return true;
+    }
+
+    void markDirectAction() {
+        this.directAction = true;
+    }
+
+    boolean consumeDirectAction() {
+        boolean handled = this.directAction;
+        this.directAction = false;
+        return handled;
     }
 
     @Override

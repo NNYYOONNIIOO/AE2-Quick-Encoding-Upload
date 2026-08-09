@@ -49,11 +49,37 @@ public final class UploadClientActions {
     }
 
     public static boolean handle(GuiScreen gui, GuiButton button) {
-        if (!(button instanceof UploadButton) || gui == null) {
+        if (!(button instanceof UploadButton)) {
             return false;
         }
         UploadButton uploadButton = (UploadButton) button;
-        if (ClientHandler.isSettingsMode(gui)) {
+        if (uploadButton.consumeDirectAction()) {
+            return true;
+        }
+        return dispatch(gui, uploadButton);
+    }
+
+    static boolean handleDirect(GuiScreen gui, UploadButton button) {
+        if (button == null) {
+            return false;
+        }
+        boolean handled = dispatch(gui, button);
+        if (handled) {
+            button.markDirectAction();
+        }
+        return handled;
+    }
+
+    private static boolean dispatch(GuiScreen gui, UploadButton uploadButton) {
+        boolean settingsMode = false;
+        if (gui != null) {
+            try {
+                settingsMode = ClientHandler.isSettingsMode(gui);
+            } catch (Throwable ignored) {
+                // A button can be clicked while the quick-encoding GUI is rebuilding.
+            }
+        }
+        if (settingsMode) {
             boolean enabled = AutoUploadSettings.toggle();
             uploadButton.setState(true, enabled);
             UploadNetwork.sendAutomaticState(enabled);

@@ -159,6 +159,7 @@ public final class PatternUploadService {
         List<InterfaceTarget> result = new ArrayList<>();
         Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>());
         for (String className : new String[]{
+                "appeng.helpers.IInterfaceHost",
                 "appeng.parts.misc.PartInterface", "appeng.tile.misc.TileInterface",
                 "appeng.api.networking.IGridHost"}) {
             try {
@@ -170,7 +171,15 @@ public final class PatternUploadService {
                         continue;
                     }
                     Object duality = invokeNoArg(host, "getInterfaceDuality");
-                    IItemHandler patterns = asHandler(invokeNoArg(duality, "getPatterns"));
+                    IItemHandler patterns = asHandler(
+                            invokeOneArg(duality, "getInventoryByName", "patterns"));
+                    if (patterns == null) {
+                        patterns = asHandler(
+                                invokeOneArg(host, "getInventoryByName", "patterns"));
+                    }
+                    if (patterns == null) {
+                        patterns = asHandler(invokeNoArg(duality, "getPatterns"));
+                    }
                     if (patterns == null) {
                         patterns = asHandler(invokeNoArg(host, "getPatterns"));
                     }
@@ -238,10 +247,12 @@ public final class PatternUploadService {
             return;
         }
         for (String method : new String[]{
-                "getCustomName", "getName", "getInterfaceName", "getUnlocalizedName"}) {
+                "getCustomName", "getName", "getInterfaceName", "getUnlocalizedName",
+                "getDisplayName", "getMachineName", "getLabel"}) {
             addLabel(labels, invokeNoArg(object, method));
         }
-        for (String field : new String[]{"customName", "name", "interfaceName", "unlocalizedName"}) {
+        for (String field : new String[]{
+                "customName", "name", "interfaceName", "unlocalizedName", "machineName", "label"}) {
             addLabel(labels, readField(object, field));
         }
     }
@@ -495,8 +506,8 @@ public final class PatternUploadService {
                 try {
                     method.setAccessible(true);
                     return method.invoke(object, argument);
-                } catch (ReflectiveOperationException | SecurityException ignored) {
-                    return null;
+                } catch (ReflectiveOperationException | SecurityException | IllegalArgumentException ignored) {
+                    // Try another overload instead of abandoning the interface lookup.
                 }
             }
         }
@@ -506,8 +517,8 @@ public final class PatternUploadService {
             }
             try {
                 return method.invoke(object, argument);
-            } catch (ReflectiveOperationException | SecurityException ignored) {
-                return null;
+            } catch (ReflectiveOperationException | SecurityException | IllegalArgumentException ignored) {
+                // Try the next public overload.
             }
         }
         return null;
