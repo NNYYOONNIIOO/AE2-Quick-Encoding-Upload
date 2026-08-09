@@ -64,8 +64,8 @@ public final class RecipeCatalystResolver {
                     }
                 }
             }
-            LOGGER.info("[AE2QuickEncodingUpload] captured HEI catalysts category={} count={}",
-                    key, registered.size());
+            LOGGER.info("[AE2QuickEncodingUpload] captured HEI catalysts category={} count={} names={}",
+                    key, registered.size(), describeStacks(registered));
         }
     }
 
@@ -77,21 +77,30 @@ public final class RecipeCatalystResolver {
     public static void captureModRegistry(Object modRegistry) {
         Object catalystTable = readNamedField(modRegistry, "recipeCatalysts");
         if (catalystTable == null) {
+            catalystTable = findFieldContaining(modRegistry, "catalyst");
+        }
+        if (catalystTable == null) {
             LOGGER.info("[AE2QuickEncodingUpload] HEI catalyst table unavailable");
             return;
         }
+        LOGGER.info("[AE2QuickEncodingUpload] capturing HEI catalyst table type={}",
+                catalystTable.getClass().getName());
         captureCatalystTable(catalystTable);
     }
 
     private static void captureCatalystTable(Object table) {
         Object entries = invokeNoArg(table, "entrySet");
         if (entries instanceof Iterable) {
+            int categoryCount = 0;
             for (Object entry : (Iterable<?>) entries) {
                 if (entry instanceof Map.Entry) {
                     Map.Entry<?, ?> pair = (Map.Entry<?, ?>) entry;
                     captureRecipeCatalyst(pair.getValue(), new String[]{String.valueOf(pair.getKey())});
+                    categoryCount++;
                 }
             }
+            LOGGER.info("[AE2QuickEncodingUpload] captured HEI catalyst table categories={}",
+                    categoryCount);
             return;
         }
 
@@ -102,6 +111,40 @@ public final class RecipeCatalystResolver {
                 captureRecipeCatalyst(values, new String[]{String.valueOf(key)});
             }
         }
+    }
+
+    private static Object findFieldContaining(Object object, String fragment) {
+        if (object == null) {
+            return null;
+        }
+        for (Class<?> type = object.getClass(); type != null; type = type.getSuperclass()) {
+            for (Field field : type.getDeclaredFields()) {
+                if (!field.getName().toLowerCase(Locale.ROOT).contains(fragment)) {
+                    continue;
+                }
+                try {
+                    field.setAccessible(true);
+                    return field.get(object);
+                } catch (IllegalAccessException | SecurityException ignored) {
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String describeStacks(List<ItemStack> stacks) {
+        List<String> names = new ArrayList<>();
+        for (ItemStack stack : stacks) {
+            if (stack == null || stack.isEmpty()) {
+                continue;
+            }
+            List<String> aliases = rawAliases(stack);
+            if (!aliases.isEmpty()) {
+                names.add(aliases.get(0));
+            }
+        }
+        return names.toString();
     }
 
     public static List<ItemStack> getCatalysts(String categoryUid) {
