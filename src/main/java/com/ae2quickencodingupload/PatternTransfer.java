@@ -106,7 +106,11 @@ public final class PatternTransfer {
 
         InterfaceTarget target;
         if (craftingPattern) {
-            target = findCraftingInterfaceTarget(container);
+            target = machineData != null && !machineData.hasNoTags()
+                    ? findInterfaceTarget(container, machineData, true) : null;
+            if (target == null) {
+                target = findCraftingInterfaceTarget(container);
+            }
         } else {
             target = findInterfaceTarget(container, machineData, true);
             if (target == null) {
@@ -296,6 +300,21 @@ public final class PatternTransfer {
                                                         NBTTagCompound machineData,
                                                         boolean processingFirst) {
         LOGGER.info("[AE2QuickEncodingUpload] findInterfaceTarget invoked");
+        if (machineData == null || machineData.hasNoTags()) {
+            return null;
+        }
+
+        String categoryUid = getCategoryUid(machineData);
+        if (!categoryUid.isEmpty()) {
+            List<ItemStack> catalysts = RecipeCatalystResolver.getCatalysts(categoryUid);
+            LOGGER.info("[AE2QuickEncodingUpload] category={} registered catalyst count={}",
+                    categoryUid, catalysts.size());
+            InterfaceTarget categoryTarget = findCategoryCatalystTarget(container, categoryUid, catalysts);
+            if (categoryTarget != null) {
+                return categoryTarget;
+            }
+        }
+
         String[] keys = processingFirst
                 ? new String[]{"ProcessingMethod", "processing", "ProcessingMethods"}
                 : new String[]{"MachineName", "machine", "MachineNames"};
@@ -310,7 +329,6 @@ public final class PatternTransfer {
         // whose INTERFACE_TERMINAL setting allows them to appear in this terminal.
         List<ClientDCInternalInv> allInterfaces = findGuiInventories();
         LOGGER.info("[AE2QuickEncodingUpload] synchronized interface count={}", allInterfaces.size());
-        InterfaceTarget capabilityTarget = null;
         for (ClientDCInternalInv clientInventory : allInterfaces) {
             if (!hasFreePatternSlot(clientInventory)) {
                 continue;
@@ -319,32 +337,19 @@ public final class PatternTransfer {
             long trackerId = clientInventory.getId();
             String displayName = clientInventory.getName();
             String unlocalizedName = clientInventory.getUnlocalizedName();
-            boolean exactMatch = matchesMetadata(metadata, displayName, processingFirst)
+            boolean aliasMatch = matchesMetadata(metadata, displayName, processingFirst)
                     || matchesMetadata(metadata, unlocalizedName, processingFirst)
-                    || matchesStoredPattern(clientInventory, machineData, processingFirst);
-            boolean capabilityMatch = processingFirst
-                    && (matchesGenericProcessingCapability(metadata, displayName)
-                    || matchesGenericProcessingCapability(metadata, unlocalizedName));
-            boolean matches = exactMatch || capabilityMatch;
-            LOGGER.info("[AE2QuickEncodingUpload] candidate interface id={} displayName={} unlocalizedName={} matches={} exactMatch={} capabilityMatch={} processingFirst={}",
-                    trackerId, displayName, unlocalizedName, matches, exactMatch, capabilityMatch, processingFirst);
-            if (matches) {
-                LOGGER.info("[AE2QuickEncodingUpload] selected interface id={} displayName={} unlocalizedName={} processingFirst={}",
+                    || matchesStoredPatternForCategory(clientInventory, machineData);
+            LOGGER.info("[AE2QuickEncodingUpload] candidate interface id={} displayName={} unlocalizedName={} category={} aliasMatch={} processingFirst={}",
+                    trackerId, displayName, unlocalizedName, categoryUid, aliasMatch, processingFirst);
+            if (aliasMatch) {
+                LOGGER.info("[AE2QuickEncodingUpload] selected interface id={} displayName={} unlocalizedName={} reason=pattern-alias processingFirst={}",
                         trackerId, displayName, unlocalizedName, processingFirst);
                 // The entry may be outside the currently rendered page. The server
                 // uses this synchronized id to insert into the first free pattern slot.
-                InterfaceTarget candidateTarget = new InterfaceTarget(trackerId,
+                return new InterfaceTarget(trackerId,
                         findEmptyDisconnectedSlot(container, trackerId));
-                if (exactMatch) {
-                    return candidateTarget;
-                }
-                if (capabilityTarget == null) {
-                    capabilityTarget = candidateTarget;
-                }
             }
-        }
-        if (capabilityTarget != null) {
-            return capabilityTarget;
         }
         // Keep the tracker-map path as a compatibility fallback for AE2
         // builds that do not expose the synchronized data under this name.
@@ -371,6 +376,50 @@ public final class PatternTransfer {
             }
         }
         return null;
+    }
+
+    private static InterfaceTarget findCategoryCatalystTarget(Container container,
+                                                               String categoryUid,
+                                                               List<ItemStack> catalysts) {
+        if (catalysts == null || catalysts.isEmpty()) {
+            return null;
+        }
+        for (ClientDCInternalInv clientInventory : findGuiInventories()) {
+            if (!hasFreePatternSlot(clientInventory)) {
+                continue;
+            }
+            boolean matches = RecipeCatalystResolver.matchesAny(catalysts, clientInventory);
+            LOGGER.info("[AE2QuickEncodingUpload] category candidate id={} displayName={} unlocalizedName={} category={} catalystMatch={}",
+                    clientInventory.getId(), clientInventory.getName(),
+                    clientInventory.getUnlocalizedName(), categoryUid, matches);
+            if (matches) {
+                long id = clientInventory.getId();
+                LOGGER.info("[AE2QuickEncodingUpload] selected interface id={} displayName={} reason=category-catalyst category={}",
+                        id, clientInventory.getName(), categoryUid);
+                return new InterfaceTarget(id, findEmptyDisconnectedSlot(container, id));
+            }
+        }
+        return null;
+    }
+
+    private static boolean matchesStoredPatternForCategory(ClientDCInternalInv clientInventory,
+                                                            NBTTagCompound machineData) {
+        String expectedCategory = getCategoryUid(machineData);
+        if (expectedCategory.isEmpty()) {
+            return false;
+        }
+        for (int slot = 0; slot < clientInventory.getInventory().getSlots(); slot++) {
+            ItemStack stored = clientInventory.getInventory().getStackInSlot(slot);
+            NBTTagCompound storedData = getMachineData(stored);
+            if (storedData == null || storedData.hasNoTags()) {
+                continue;
+            }
+            String storedCategory = getCategoryUid(storedData);
+            if (!storedCategory.isEmpty() && expectedCategory.equalsIgnoreCase(storedCategory)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -747,6 +796,23 @@ public final class PatternTransfer {
         } catch (ReflectiveOperationException | SecurityException ignored) {
             return null;
         }
+    }
+
+    private static String getCategoryUid(NBTTagCompound machineData) {
+        if (machineData == null) {
+            return "";
+        }
+        String[] keys = new String[]{"CategoryUid", "category", "categoryUid", "recipeCategory"};
+        for (String key : keys) {
+            if (!machineData.hasKey(key, 8)) {
+                continue;
+            }
+            String value = machineData.getString(key);
+            if (value != null && !value.trim().isEmpty()) {
+                return value.trim();
+            }
+        }
+        return "";
     }
 
     private static NBTTagCompound getMachineData(ItemStack stack) {
