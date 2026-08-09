@@ -407,6 +407,15 @@ public final class PatternUploadService {
     }
 
     private static boolean isGridLike(Object object) {
+        if (object == null) {
+            return false;
+        }
+        for (Method method : object.getClass().getMethods()) {
+            if ("getMachines".equals(method.getName())
+                    && method.getParameterTypes().length == 1) {
+                return true;
+            }
+        }
         for (Class<?> type = object.getClass(); type != null; type = type.getSuperclass()) {
             for (Method method : type.getDeclaredMethods()) {
                 if ("getMachines".equals(method.getName())
@@ -422,8 +431,15 @@ public final class PatternUploadService {
         if (object == null) {
             return null;
         }
-        Object grid = invokeNoArg(object, "getGrid");
-        if (grid != null) {
+        // AE2's network-backed containers expose the connected IGrid as getNetwork().
+        // This is the normal path for the pattern encoder and does not require an
+        // interface-terminal GUI to be open.
+        Object grid = invokeNoArg(object, "getNetwork");
+        if (isGridLike(grid)) {
+            return grid;
+        }
+        grid = invokeNoArg(object, "getGrid");
+        if (isGridLike(grid)) {
             return grid;
         }
         Object node = invokeNoArg(object, "getNetworkNode");
@@ -434,12 +450,12 @@ public final class PatternUploadService {
             node = invokeNoArg(object, "getNode");
         }
         grid = invokeNoArg(node, "getGrid");
-        if (grid != null) {
+        if (isGridLike(grid)) {
             return grid;
         }
         Object proxy = invokeNoArg(object, "getProxy");
         grid = invokeNoArg(proxy, "getGrid");
-        if (grid != null) {
+        if (isGridLike(grid)) {
             return grid;
         }
         Object host = invokeNoArg(object, "getHost");
