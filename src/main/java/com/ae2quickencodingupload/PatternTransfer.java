@@ -32,6 +32,42 @@ import java.lang.reflect.Method;
 
 public final class PatternTransfer {
     private static final Logger LOGGER = LogManager.getLogger("ae2_quick_encoding_upload");
+    private static volatile Map<Long, ClientDCInternalInv> synchronizedInterfaceInventories =
+            Collections.emptyMap();
+
+    /** Receives the complete interface map directly from GuiInterfaceTerminal. */
+    public static void captureGuiInterfaceInventories(Object gui) {
+        Map<Long, ClientDCInternalInv> captured = new java.util.LinkedHashMap<>();
+        if (gui != null) {
+            try {
+                for (Class<?> type = gui.getClass(); type != null; type = type.getSuperclass()) {
+                    for (Field field : type.getDeclaredFields()) {
+                        if (!Map.class.isAssignableFrom(field.getType())) {
+                            continue;
+                        }
+                        field.setAccessible(true);
+                        Object value = field.get(gui);
+                        if (!(value instanceof Map)) {
+                            continue;
+                        }
+                        for (Object candidate : ((Map<?, ?>) value).values()) {
+                            if (candidate instanceof ClientDCInternalInv) {
+                                ClientDCInternalInv inventory = (ClientDCInternalInv) candidate;
+                                captured.put(inventory.getId(), inventory);
+                            }
+                        }
+                    }
+                }
+            } catch (ReflectiveOperationException | SecurityException e) {
+                LOGGER.info("[AE2QuickEncodingUpload] failed to capture GUI interface map", e);
+            }
+        }
+        synchronizedInterfaceInventories = captured.isEmpty()
+                ? Collections.emptyMap()
+                : captured;
+        LOGGER.info("[AE2QuickEncodingUpload] GUI Mixin captured synchronized interface count={}",
+                synchronizedInterfaceInventories.size());
+    }
 
     private PatternTransfer() {
     }
@@ -72,9 +108,12 @@ public final class PatternTransfer {
             target = findInterfaceTarget(container, machineData, false);
         }
         if (target == null) {
+            LOGGER.info("[AE2QuickEncodingUpload] no matching interface target metadata={}", machineData);
             return false;
         }
 
+        LOGGER.info("[AE2QuickEncodingUpload] sending PLACE_SINGLE sourceSlot={} targetId={} visualSlotPresent={}",
+                source.slotNumber, target.id, target.slot != null);
         NetworkHandler.instance().sendToServer(new PacketInventoryAction(
                 InventoryAction.PLACE_SINGLE, source.slotNumber, target.id));
         return true;
@@ -211,7 +250,8 @@ public final class PatternTransfer {
             String displayName = clientInventory.getName();
             String unlocalizedName = clientInventory.getUnlocalizedName();
             boolean matches = matchesMetadata(metadata, displayName, processingFirst)
-                    || matchesMetadata(metadata, unlocalizedName, processingFirst);
+                    || matchesMetadata(metadata, unlocalizedName, processingFirst)
+                    || matchesStoredPattern(clientInventory, machineData, processingFirst);
             LOGGER.info("[AE2QuickEncodingUpload] candidate interface id={} displayName={} unlocalizedName={} matches={} processingFirst={}",
                     trackerId, displayName, unlocalizedName, matches, processingFirst);
             if (matches) {
@@ -256,6 +296,13 @@ public final class PatternTransfer {
      * map before comparing names.
      */
     private static List<ClientDCInternalInv> findGuiInventories() {
+        Map<Long, ClientDCInternalInv> directGuiInventories = synchronizedInterfaceInventories;
+        if (directGuiInventories != null && !directGuiInventories.isEmpty()) {
+            List<ClientDCInternalInv> result = new ArrayList<>(directGuiInventories.values());
+            LOGGER.info("[AE2QuickEncodingUpload] synchronized interface count={} source=gui-mixin",
+                    result.size());
+            return result;
+        }
         List<ClientDCInternalInv> result = new ArrayList<>();
         try {
             Class<?> minecraftClass = Class.forName("net.minecraft.client.Minecraft");
@@ -290,6 +337,45 @@ public final class PatternTransfer {
         return result;
     }
 
+    private static boolean matchesStoredPattern(ClientDCInternalInv clientInventory,
+                                                 NBTTagCompound machineData,
+                                                 boolean processingFirst) {
+        if (clientInventory == null) {
+            return false;
+        }
+        String[] keys = processingFirst
+                ? new String[]{"ProcessingMethod", "processing", "ProcessingMethods"}
+                : new String[]{"MachineName", "machine", "MachineNames"};
+        List<String> expected = values(machineData, keys);
+        if (expected.isEmpty()) {
+            return false;
+        }
+        for (int slot = 0; slot < clientInventory.getInventory().getSlots(); slot++) {
+            ItemStack stored = clientInventory.getInventory().getStackInSlot(slot);
+            NBTTagCompound storedData = getMachineData(stored);
+            if (storedData == null) {
+                continue;
+            }
+            List<String> actual = values(storedData, keys);
+            if (processingFirst ? intersectsProcessing(expected, actual) : intersects(expected, new LinkedHashSet<>(actual))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean intersectsProcessing(List<String> left, List<String> right) {
+        for (String first : left) {
+            for (String second : right) {
+                String firstFamily = processingFamily(first);
+                String secondFamily = processingFamily(second);
+                if (!firstFamily.isEmpty() && firstFamily.equals(secondFamily)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
     private static boolean hasFreePatternSlot(ClientDCInternalInv clientInventory) {
         if (clientInventory == null) {
             return false;

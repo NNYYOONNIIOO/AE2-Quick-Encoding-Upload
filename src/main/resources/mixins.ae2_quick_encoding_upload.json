@@ -15,7 +15,8 @@
     "MixinContainerInterfaceTerminal"
   ],
   "client": [
-    "MixinRecipeBookmarkCatalog"
+    "MixinRecipeBookmarkCatalog",
+    "MixinGuiInterfaceTerminal"
   ],
   "injectors": {
     "defaultRequire": 1
