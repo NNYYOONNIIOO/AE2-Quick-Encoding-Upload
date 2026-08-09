@@ -196,36 +196,32 @@ public final class PatternTransfer {
             return null;
         }
 
-        // On the client, ContainerInterfaceTerminal.data is not populated by
-        // PacketCompressedNBT. AE2 applies that packet to GuiInterfaceTerminal,
-        // which creates the ClientDCInternalInv held by each SlotDisconnected.
-        // Read the synchronized display and unlocalized names from that object.
-        for (Slot slot : container.inventorySlots) {
-            if (!(slot instanceof SlotDisconnected) || slot.getHasStack()) {
+        // GuiInterfaceTerminal receives the complete synchronized interface list.
+        // container.inventorySlots only contains the currently rendered page, so
+        // inspect the GUI byId map instead. AE2 only synchronizes interfaces
+        // whose INTERFACE_TERMINAL setting allows them to appear in this terminal.
+        List<ClientDCInternalInv> allInterfaces = findGuiInventories();
+        LOGGER.info("[AE2QuickEncodingUpload] synchronized interface count={}", allInterfaces.size());
+        for (ClientDCInternalInv clientInventory : allInterfaces) {
+            if (!hasFreePatternSlot(clientInventory)) {
                 continue;
             }
 
-            SlotDisconnected disconnected = (SlotDisconnected) slot;
-            ClientDCInternalInv slotInventory = disconnected.getSlot();
-            if (slotInventory == null) {
-                continue;
-            }
-
-            long trackerId = slotInventory.getId();
-            ClientDCInternalInv guiInventory = findGuiInventory(trackerId);
-            ClientDCInternalInv clientInventory = guiInventory == null ? slotInventory : guiInventory;
+            long trackerId = clientInventory.getId();
             String displayName = clientInventory.getName();
             String unlocalizedName = clientInventory.getUnlocalizedName();
-            LOGGER.info("[AE2QuickEncodingUpload] candidate interface id={} displayName={} unlocalizedName={} source={} processingFirst={}",
-                    trackerId, displayName, unlocalizedName, guiInventory == null ? "slot" : "gui", processingFirst);
-            if (matchesMetadata(metadata, displayName, processingFirst)
-                    || matchesMetadata(metadata, unlocalizedName, processingFirst)) {
-                LOGGER.info("[AE2QuickEncodingUpload] selected interface id={} displayName={} unlocalizedName={} source={} processingFirst={}",
-                        trackerId, displayName, unlocalizedName, guiInventory == null ? "slot" : "gui", processingFirst);
-                return new InterfaceTarget(trackerId, disconnected);
+            boolean matches = matchesMetadata(metadata, displayName, processingFirst)
+                    || matchesMetadata(metadata, unlocalizedName, processingFirst);
+            LOGGER.info("[AE2QuickEncodingUpload] candidate interface id={} displayName={} unlocalizedName={} matches={} processingFirst={}",
+                    trackerId, displayName, unlocalizedName, matches, processingFirst);
+            if (matches) {
+                LOGGER.info("[AE2QuickEncodingUpload] selected interface id={} displayName={} unlocalizedName={} processingFirst={}",
+                        trackerId, displayName, unlocalizedName, processingFirst);
+                // The entry may be outside the currently rendered page. The server
+                // uses this synchronized id to insert into the first free pattern slot.
+                return new InterfaceTarget(trackerId, findEmptyDisconnectedSlot(container, trackerId));
             }
         }
-
         // Keep the tracker-map path as a compatibility fallback for AE2
         // builds that do not expose the synchronized data under this name.
         for (Map<?, ?> trackers : trackerMaps(container)) {
@@ -259,7 +255,8 @@ public final class PatternTransfer {
      * placeholder name "Nothing", so resolve the same id through the GUI
      * map before comparing names.
      */
-    private static ClientDCInternalInv findGuiInventory(long id) {
+    private static List<ClientDCInternalInv> findGuiInventories() {
+        List<ClientDCInternalInv> result = new ArrayList<>();
         try {
             Class<?> minecraftClass = Class.forName("net.minecraft.client.Minecraft");
             Object minecraft = minecraftClass.getMethod("getMinecraft").invoke(null);
@@ -267,7 +264,7 @@ public final class PatternTransfer {
             screenField.setAccessible(true);
             Object screen = screenField.get(minecraft);
             if (screen == null) {
-                return null;
+                return result;
             }
 
             for (Class<?> type = screen.getClass(); type != null; type = type.getSuperclass()) {
@@ -281,19 +278,29 @@ public final class PatternTransfer {
                         continue;
                     }
                     for (Object candidate : ((Map<?, ?>) value).values()) {
-                        if (candidate instanceof ClientDCInternalInv
-                                && ((ClientDCInternalInv) candidate).getId() == id) {
-                            return (ClientDCInternalInv) candidate;
+                        if (candidate instanceof ClientDCInternalInv && !result.contains(candidate)) {
+                            result.add((ClientDCInternalInv) candidate);
                         }
                     }
                 }
             }
         } catch (ReflectiveOperationException | SecurityException ignored) {
-            // The GUI is client-only; keep the common routing class safe elsewhere.
+            // The GUI is client-only; retain a safe fallback elsewhere.
         }
-        return null;
+        return result;
     }
 
+    private static boolean hasFreePatternSlot(ClientDCInternalInv clientInventory) {
+        if (clientInventory == null) {
+            return false;
+        }
+        for (int slot = 0; slot < clientInventory.getInventory().getSlots(); slot++) {
+            if (clientInventory.getInventory().getStackInSlot(slot).isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
     private static List<Map<?, ?>> trackerMaps(Container container) {
         List<Map<?, ?>> result = new ArrayList<>();
         for (Class<?> type = container.getClass(); type != null; type = type.getSuperclass()) {
