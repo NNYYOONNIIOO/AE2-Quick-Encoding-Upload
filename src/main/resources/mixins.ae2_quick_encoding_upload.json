@@ -11,7 +11,8 @@
     "MixinPatternEncoder",
     "MixinContainer",
     "MixinAEBaseContainer",
-    "MixinContainerUpgradeable"
+    "MixinContainerUpgradeable",
+    "MixinContainerInterfaceTerminal"
   ],
   "client": [
     "MixinRecipeBookmarkCatalog"
