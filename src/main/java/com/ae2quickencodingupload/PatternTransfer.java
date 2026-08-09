@@ -1,5 +1,8 @@
 package com.ae2quickencodingupload;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import appeng.api.implementations.ICraftingPatternItem;
 import appeng.client.me.SlotDisconnected;
 import appeng.container.slot.AppEngSlot;
@@ -27,6 +30,8 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 public final class PatternTransfer {
+    private static final Logger LOGGER = LogManager.getLogger("ae2_quick_encoding_upload");
+
     private PatternTransfer() {
     }
 
@@ -39,6 +44,7 @@ public final class PatternTransfer {
     public static boolean tryInterfaceTerminalTransfer(Container container,
                                                         EntityPlayer player,
                                                         int slotIndex) {
+        LOGGER.info("[AE2QuickEncodingUpload] transferStackInSlot routing hook invoked");
         if (container == null || player == null || !player.world.isRemote
                 || !isInterfaceTerminalContainer(container)
                 || slotIndex < 0 || slotIndex >= container.inventorySlots.size()) {
@@ -180,6 +186,7 @@ public final class PatternTransfer {
     private static InterfaceTarget findInterfaceTarget(Container container,
                                                         NBTTagCompound machineData,
                                                         boolean processingFirst) {
+        LOGGER.info("[AE2QuickEncodingUpload] findInterfaceTarget invoked");
         String[] keys = processingFirst
                 ? new String[]{"ProcessingMethod", "processing", "ProcessingMethods"}
                 : new String[]{"MachineName", "machine", "MachineNames"};
@@ -261,16 +268,44 @@ public final class PatternTransfer {
     }
 
     private static NBTTagCompound readInterfaceData(Container container) {
-        Object value = readField(container, "data");
-        return value instanceof NBTTagCompound ? (NBTTagCompound) value : null;
+        Object ownerObject = container;
+        if (ownerObject == null) {
+            return null;
+        }
+
+        net.minecraft.nbt.NBTTagCompound fallback = null;
+        Class<?> type = ownerObject.getClass();
+        while (type != null) {
+            for (java.lang.reflect.Field field : type.getDeclaredFields()) {
+                try {
+                    field.setAccessible(true);
+                    Object value = field.get(ownerObject);
+                    if (!(value instanceof net.minecraft.nbt.NBTTagCompound)) {
+                        continue;
+                    }
+                    net.minecraft.nbt.NBTTagCompound nbt = (net.minecraft.nbt.NBTTagCompound) value;
+                    if ("data".equals(field.getName())) {
+                        LOGGER.info("[AE2QuickEncodingUpload] interface data field found on {} with keys {}", type.getName(), nbt.getKeySet());
+                        return nbt;
+                    }
+                    if (fallback == null && (nbt.hasKey("=id") || !nbt.getKeySet().isEmpty())) {
+                        fallback = nbt;
+                    }
+                } catch (Exception ignored) {
+                    // Continue scanning the class hierarchy.
+                }
+            }
+            type = type.getSuperclass();
+        }
+        if (fallback != null) {
+            LOGGER.info("[AE2QuickEncodingUpload] interface data fallback keys {}", fallback.getKeySet());
+        }
+        return fallback;
     }
 
     private static long disconnectedSlotId(SlotDisconnected slot) {
-        Object backing = invokeNoArg(slot, "getSlot");
-        long id = readLong(invokeNoArg(backing, "getId"), Long.MIN_VALUE);
-        if (id == Long.MIN_VALUE) {
-            id = readLong(readField(backing, "id"), Long.MIN_VALUE);
-        }
+        long id = slot.getSlot().getId();
+        LOGGER.info("[AE2QuickEncodingUpload] empty interface target slot id={}", id);
         return id;
     }
 

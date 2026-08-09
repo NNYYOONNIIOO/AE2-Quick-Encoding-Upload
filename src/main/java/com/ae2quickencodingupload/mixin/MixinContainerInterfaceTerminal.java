@@ -13,7 +13,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(targets = "appeng.container.implementations.ContainerInterfaceTerminal")
 public abstract class MixinContainerInterfaceTerminal {
     @Inject(method = {"transferStackInSlot", "func_82846_b"}, at = @At("HEAD"),
-            cancellable = true, remap = false, require = 0)
+            cancellable = true, remap = false, require = 1)
     private void ae2QuickEncodingUpload$routePattern(
             EntityPlayer player, int slotIndex, CallbackInfoReturnable<ItemStack> callback) {
         if (PatternTransfer.tryInterfaceTerminalTransfer(
