@@ -9,7 +9,9 @@
     "MixinEncodeRecipeMessage",
     "MixinEncodeRecipeMessageHandler",
     "MixinPatternEncoder",
-    "MixinContainer"
+    "MixinContainer",
+    "MixinAEBaseContainer",
+    "MixinContainerUpgradeable"
   ],
   "client": [
     "MixinRecipeBookmarkCatalog"

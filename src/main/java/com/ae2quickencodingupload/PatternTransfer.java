@@ -94,7 +94,7 @@ public final class PatternTransfer {
         for (Slot slot : container.inventorySlots) {
             if (!(slot instanceof SlotRestrictedInput) || slot instanceof SlotFake
                     || slot.xPos != xPos || !slot.getStack().isEmpty()
-                    || !slot.isItemValid(pattern)) {
+                    || slot.getSlotStackLimit() < 1 || !slot.isItemValid(pattern)) {
                 continue;
             }
             return slot;
