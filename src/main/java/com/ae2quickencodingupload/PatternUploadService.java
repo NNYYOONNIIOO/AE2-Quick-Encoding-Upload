@@ -2,6 +2,7 @@ package com.ae2quickencodingupload;
 
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.inventory.Container;
+import net.minecraft.inventory.Slot;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
@@ -37,9 +38,40 @@ public final class PatternUploadService {
         }
         int moved = uploadList(player.inventory.mainInventory, targets);
         moved += uploadList(player.inventory.offHandInventory, targets);
+        moved += uploadContainerSlots(player, targets);
         if (moved > 0) {
             player.inventory.markDirty();
             player.inventoryContainer.detectAndSendChanges();
+        }
+        return moved;
+    }
+
+    private static int uploadContainerSlots(EntityPlayerMP player, List<InterfaceTarget> targets) {
+        if (player.openContainer == null || player.openContainer.inventorySlots == null) {
+            return 0;
+        }
+        int moved = 0;
+        for (Slot slot : player.openContainer.inventorySlots) {
+            if (slot == null) {
+                continue;
+            }
+            ItemStack source = slot.getStack();
+            if (!isUploadable(source)) {
+                continue;
+            }
+            int before = source.getCount();
+            ItemStack remaining = source.copy();
+            for (InterfaceTarget target : targets) {
+                if (remaining.isEmpty() || !matches(remaining, target)) {
+                    continue;
+                }
+                remaining = insertIntoEmptyPatternSlots(target.patterns, remaining);
+            }
+            if (remaining.getCount() < before) {
+                moved += before - remaining.getCount();
+                slot.putStack(remaining.isEmpty() ? ItemStack.EMPTY : remaining);
+                slot.onSlotChanged();
+            }
         }
         return moved;
     }
@@ -139,7 +171,8 @@ public final class PatternUploadService {
         List<InterfaceTarget> result = new ArrayList<>();
         Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>());
         for (String className : new String[]{
-                "appeng.parts.misc.PartInterface", "appeng.tile.misc.TileInterface"}) {
+                "appeng.parts.misc.PartInterface", "appeng.tile.misc.TileInterface",
+                "appeng.api.networking.IGridHost"}) {
             try {
                 Object machines = invokeOneArg(grid, "getMachines", Class.forName(className));
                 List<Object> hosts = new ArrayList<>();
@@ -311,24 +344,79 @@ public final class PatternUploadService {
     }
 
     private static Object findGrid(Container container) {
-        Object grid = findGridFrom(container);
+        return findGridDeep(container,
+                Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>()), 0);
+    }
+
+    private static Object findGridDeep(Object object, Set<Object> seen, int depth) {
+        if (object == null || depth > 6 || !seen.add(object)) {
+            return null;
+        }
+        Object grid = findGridFrom(object);
         if (grid != null) {
             return grid;
         }
-        for (Class<?> type = container.getClass(); type != null; type = type.getSuperclass()) {
+        if (isGridLike(object)) {
+            return object;
+        }
+        if (object instanceof CharSequence || object instanceof Number
+                || object instanceof Class || object.getClass().isEnum()) {
+            return null;
+        }
+        if (object instanceof Map) {
+            for (Object value : ((Map<?, ?>) object).values()) {
+                Object nested = findGridDeep(value, seen, depth + 1);
+                if (nested != null) {
+                    return nested;
+                }
+            }
+        } else if (object instanceof Iterable) {
+            for (Object value : (Iterable<?>) object) {
+                Object nested = findGridDeep(value, seen, depth + 1);
+                if (nested != null) {
+                    return nested;
+                }
+            }
+        } else if (object.getClass().isArray()) {
+            for (int i = 0; i < Array.getLength(object); i++) {
+                Object nested = findGridDeep(Array.get(object, i), seen, depth + 1);
+                if (nested != null) {
+                    return nested;
+                }
+            }
+        }
+        for (Class<?> type = object.getClass(); type != null && type != Object.class;
+             type = type.getSuperclass()) {
             for (java.lang.reflect.Field field : type.getDeclaredFields()) {
+                int modifiers = field.getModifiers();
+                if (java.lang.reflect.Modifier.isStatic(modifiers)
+                        || field.getType().isPrimitive() || field.isSynthetic()) {
+                    continue;
+                }
                 try {
                     field.setAccessible(true);
-                    grid = findGridFrom(field.get(container));
-                    if (grid != null) {
-                        return grid;
+                    Object nested = findGridDeep(field.get(object), seen, depth + 1);
+                    if (nested != null) {
+                        return nested;
                     }
                 } catch (IllegalAccessException | SecurityException ignored) {
-                    // Continue through container fields.
+                    // Continue through the object graph.
                 }
             }
         }
         return null;
+    }
+
+    private static boolean isGridLike(Object object) {
+        for (Class<?> type = object.getClass(); type != null; type = type.getSuperclass()) {
+            for (Method method : type.getDeclaredMethods()) {
+                if ("getMachines".equals(method.getName())
+                        && method.getParameterTypes().length == 1) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static Object findGridFrom(Object object) {
@@ -339,7 +427,10 @@ public final class PatternUploadService {
         if (grid != null) {
             return grid;
         }
-        Object node = invokeNoArg(object, "getGridNode");
+        Object node = invokeNoArg(object, "getNetworkNode");
+        if (node == null) {
+            node = invokeNoArg(object, "getGridNode");
+        }
         grid = invokeNoArg(node, "getGrid");
         if (grid != null) {
             return grid;

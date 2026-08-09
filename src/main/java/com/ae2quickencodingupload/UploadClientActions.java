@@ -49,7 +49,7 @@ public final class UploadClientActions {
     }
 
     public static boolean handle(GuiScreen gui, GuiButton button) {
-        if (!(button instanceof UploadButton) || gui == null || !isPatternGui(gui)) {
+        if (!(button instanceof UploadButton) || gui == null) {
             return false;
         }
         UploadButton uploadButton = (UploadButton) button;
