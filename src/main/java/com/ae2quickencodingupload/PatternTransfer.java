@@ -99,13 +99,19 @@ public final class PatternTransfer {
         }
 
         NBTTagCompound machineData = getMachineData(pattern);
-        if (machineData == null || machineData.hasNoTags()) {
+        boolean craftingPattern = isCraftingPattern(pattern);
+        if (!craftingPattern && (machineData == null || machineData.hasNoTags())) {
             return false;
         }
 
-        InterfaceTarget target = findInterfaceTarget(container, machineData, true);
-        if (target == null) {
-            target = findInterfaceTarget(container, machineData, false);
+        InterfaceTarget target;
+        if (craftingPattern) {
+            target = findCraftingInterfaceTarget(container);
+        } else {
+            target = findInterfaceTarget(container, machineData, true);
+            if (target == null) {
+                target = findInterfaceTarget(container, machineData, false);
+            }
         }
         if (target == null) {
             LOGGER.info("[AE2QuickEncodingUpload] no matching interface target metadata={}", machineData);
@@ -221,6 +227,69 @@ public final class PatternTransfer {
             return true;
         }
         return slot instanceof AppEngSlot && ((AppEngSlot) slot).isPlayerSide();
+    }
+
+    /**
+     * Routes a crafting pattern without tying the implementation to one
+     * particular crafting machine. An interface that already contains a
+     * crafting pattern is authoritative; generic crafting/assembly labels
+     * are the fallback for an otherwise empty interface.
+     */
+    private static InterfaceTarget findCraftingInterfaceTarget(Container container) {
+        LOGGER.info("[AE2QuickEncodingUpload] searching for generic crafting-capable interface");
+        List<ClientDCInternalInv> allInterfaces = findGuiInventories();
+
+        for (ClientDCInternalInv clientInventory : allInterfaces) {
+            if (!hasFreePatternSlot(clientInventory) || !hasCraftingPattern(clientInventory)) {
+                continue;
+            }
+            long id = clientInventory.getId();
+            LOGGER.info("[AE2QuickEncodingUpload] selected crafting interface id={} displayName={} reason=stored-crafting-pattern",
+                    id, clientInventory.getName());
+            return new InterfaceTarget(id, findEmptyDisconnectedSlot(container, id));
+        }
+
+        for (ClientDCInternalInv clientInventory : allInterfaces) {
+            if (!hasFreePatternSlot(clientInventory)) {
+                continue;
+            }
+            String displayName = clientInventory.getName();
+            String unlocalizedName = clientInventory.getUnlocalizedName();
+            boolean nameCapability = isCraftingCapabilityName(displayName)
+                    || isCraftingCapabilityName(unlocalizedName);
+            LOGGER.info("[AE2QuickEncodingUpload] crafting interface candidate id={} displayName={} unlocalizedName={} nameCapability={}",
+                    clientInventory.getId(), displayName, unlocalizedName, nameCapability);
+            if (nameCapability) {
+                long id = clientInventory.getId();
+                LOGGER.info("[AE2QuickEncodingUpload] selected crafting interface id={} displayName={} reason=generic-capability-name",
+                        id, displayName);
+                return new InterfaceTarget(id, findEmptyDisconnectedSlot(container, id));
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasCraftingPattern(ClientDCInternalInv clientInventory) {
+        if (clientInventory == null) {
+            return false;
+        }
+        for (int slot = 0; slot < clientInventory.getInventory().getSlots(); slot++) {
+            ItemStack stored = clientInventory.getInventory().getStackInSlot(slot);
+            if (isCraftingPattern(stored)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isCraftingCapabilityName(String value) {
+        String normalized = normalize(value);
+        return normalized.contains("craft")
+                || normalized.contains("assembl")
+                || normalized.contains("合成")
+                || normalized.contains("装配")
+                || normalized.contains("制作")
+                || normalized.contains("制造");
     }
 
     private static InterfaceTarget findInterfaceTarget(Container container,
@@ -579,6 +648,14 @@ public final class PatternTransfer {
             return nested;
         }
         return root.hasKey("MachineName") || root.hasKey("ProcessingMethod") ? root : null;
+    }
+
+    private static boolean isCraftingPattern(ItemStack stack) {
+        if (stack == null || stack.isEmpty() || !stack.hasTagCompound()) {
+            return false;
+        }
+        NBTTagCompound tag = stack.getTagCompound();
+        return tag.hasKey("crafting", 1) && tag.getBoolean("crafting");
     }
 
     private static List<String> values(NBTTagCompound tag, String[] keys) {
