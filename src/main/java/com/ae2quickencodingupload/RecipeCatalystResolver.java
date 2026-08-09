@@ -232,6 +232,10 @@ public final class RecipeCatalystResolver {
     }
 
     /** Matches complete item identities only; no substring or root matching. */
+    public static String describeCatalysts(String categoryUid) {
+        return describeStacks(getCatalysts(categoryUid));
+    }
+
     public static boolean matchesAny(List<ItemStack> catalysts, ClientDCInternalInv inventory) {
         if (catalysts == null || catalysts.isEmpty() || inventory == null) {
             return false;
