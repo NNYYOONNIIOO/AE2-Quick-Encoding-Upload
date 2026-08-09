@@ -69,6 +69,41 @@ public final class RecipeCatalystResolver {
         }
     }
 
+    /**
+     * Captures the completed category-to-catalyst table before HEI freezes it
+     * into RecipeRegistry. This is the same data used to render the machine
+     * list at the left side of a recipe page.
+     */
+    public static void captureModRegistry(Object modRegistry) {
+        Object catalystTable = readNamedField(modRegistry, "recipeCatalysts");
+        if (catalystTable == null) {
+            LOGGER.info("[AE2QuickEncodingUpload] HEI catalyst table unavailable");
+            return;
+        }
+        captureCatalystTable(catalystTable);
+    }
+
+    private static void captureCatalystTable(Object table) {
+        Object entries = invokeNoArg(table, "entrySet");
+        if (entries instanceof Iterable) {
+            for (Object entry : (Iterable<?>) entries) {
+                if (entry instanceof Map.Entry) {
+                    Map.Entry<?, ?> pair = (Map.Entry<?, ?>) entry;
+                    captureRecipeCatalyst(pair.getValue(), new String[]{String.valueOf(pair.getKey())});
+                }
+            }
+            return;
+        }
+
+        Object keys = invokeNoArg(table, "keySet");
+        if (keys instanceof Iterable) {
+            for (Object key : (Iterable<?>) keys) {
+                Object values = invokeOneArg(table, "get", key);
+                captureRecipeCatalyst(values, new String[]{String.valueOf(key)});
+            }
+        }
+    }
+
     public static List<ItemStack> getCatalysts(String categoryUid) {
         if (categoryUid == null || categoryUid.trim().isEmpty()) {
             return Collections.emptyList();
@@ -374,6 +409,42 @@ public final class RecipeCatalystResolver {
                 } catch (IllegalAccessException | SecurityException ignored) {
                     // Continue through the proxy object graph.
                 }
+            }
+        }
+        return null;
+    }
+
+    private static Object readNamedField(Object object, String name) {
+        if (object == null) {
+            return null;
+        }
+        for (Class<?> type = object.getClass(); type != null; type = type.getSuperclass()) {
+            try {
+                java.lang.reflect.Field field = type.getDeclaredField(name);
+                field.setAccessible(true);
+                return field.get(object);
+            } catch (NoSuchFieldException ignored) {
+                // Continue through the class hierarchy.
+            } catch (IllegalAccessException | SecurityException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static Object invokeOneArg(Object target, String name, Object argument) {
+        if (target == null) {
+            return null;
+        }
+        for (Method method : target.getClass().getMethods()) {
+            if (!method.getName().equals(name) || method.getParameterTypes().length != 1
+                    || (argument != null && !method.getParameterTypes()[0].isAssignableFrom(argument.getClass()))) {
+                continue;
+            }
+            try {
+                return method.invoke(target, argument);
+            } catch (ReflectiveOperationException | SecurityException ignored) {
+                return null;
             }
         }
         return null;

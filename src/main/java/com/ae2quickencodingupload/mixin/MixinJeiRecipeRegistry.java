@@ -24,4 +24,16 @@ public abstract class MixinJeiRecipeRegistry {
                     callback.getReturnValue(), new String[]{category.getUid()});
         }
     }
+
+    @Inject(method = "getRecipeCatalysts(Lmezz/jei/api/recipe/IRecipeCategory;Z)Ljava/util/List;",
+            at = @At("RETURN"), remap = false, require = 0)
+    private void ae2QuickEncodingUpload$captureRecipeCatalystsWithFlag(
+            IRecipeCategory<?> category,
+            boolean includeHidden,
+            CallbackInfoReturnable<List<Object>> callback) {
+        if (category != null) {
+            RecipeCatalystResolver.captureRecipeCatalyst(
+                    callback.getReturnValue(), new String[]{category.getUid()});
+        }
+    }
 }
