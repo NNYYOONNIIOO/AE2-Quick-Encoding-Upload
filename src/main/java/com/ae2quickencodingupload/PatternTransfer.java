@@ -101,7 +101,8 @@ public final class PatternTransfer {
         NBTTagCompound machineData = getMachineData(pattern);
         boolean craftingPattern = isCraftingPattern(pattern);
         if (!craftingPattern && (machineData == null || machineData.hasNoTags())) {
-            return false;
+            LOGGER.info("[AE2QuickEncodingUpload] blocked default interface transfer: pattern has no machine metadata");
+            return true;
         }
 
         InterfaceTarget target;
@@ -115,7 +116,10 @@ public final class PatternTransfer {
         }
         if (target == null) {
             LOGGER.info("[AE2QuickEncodingUpload] no matching interface target metadata={}", machineData);
-            return false;
+            // Returning true tells the container mixin that this was handled and
+            // prevents AE2's original fallback from inserting into the first empty
+            // interface slot.
+            return true;
         }
 
         LOGGER.info("[AE2QuickEncodingUpload] sending PLACE_SINGLE sourceSlot={} targetId={} visualSlotPresent={}",
