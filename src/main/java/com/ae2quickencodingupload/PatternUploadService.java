@@ -391,37 +391,28 @@ public final class PatternUploadService {
      * to the two built-in AE2 interface classes.
      */
     private static void collectReflectivePatternTargets(List<InterfaceTarget> result,
-                                                         Set<Object> seenMachines,
-                                                         IGrid grid) {
-        Set<IGridNode> nodes = Collections.newSetFromMap(
-                new IdentityHashMap<IGridNode, Boolean>());
-        try {
-            for (IGridNode node : grid.getMachines(IGridHost.class)) {
-                if (node != null) {
-                    nodes.add(node);
-                }
-            }
-        } catch (RuntimeException exception) {
-            LOGGER.debug("Could not enumerate AE2 grid hosts directly.", exception);
+                                                          Set<Object> seenMachines,
+                                                          IGrid grid) {
+        if (grid == null) {
+            return;
         }
-        LOGGER.debug("Network machine discovery found {} active IGridHost nodes.",
-                nodes.size());
+        Set<Class<?>> machineTypes = new LinkedHashSet<>();
+        machineTypes.add(IGridHost.class);
+        collectRegisteredMachineTypes(grid, machineTypes);
 
         Set<Object> seenHandlers = Collections.newSetFromMap(
                 new IdentityHashMap<Object, Boolean>());
-        for (IGridNode node : nodes) {
-            if (node == null || !node.isActive()) {
-                continue;
-            }
-            Object machine = node.getMachine();
-            if (machine == null || !seenMachines.add(machine)) {
-                continue;
-            }
-            collectKnownPatternHandlers(result, seenHandlers, machine,
-                    new ArrayList<Object>(),
-                    Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>()), 0);
+        Set<Object> seenNodes = Collections.newSetFromMap(
+                new IdentityHashMap<Object, Boolean>());
+        int discoveredNodes = 0;
+        for (Class<?> machineType : machineTypes) {
+            Object nodes = invokeOneArg(grid, "getMachines", machineType);
+            discoveredNodes += collectRegisteredGridNodes(result, seenMachines,
+                    seenHandlers, nodes, seenNodes);
         }
-        LOGGER.debug("Discovered {} additional network pattern targets.",
+        LOGGER.debug("Network machine discovery found {} nodes across {} registered machine types.",
+                discoveredNodes, machineTypes.size());
+        LOGGER.debug("Discovered {} network pattern targets.",
                 Math.max(0, result.size()));
     }
 
@@ -523,6 +514,115 @@ public final class PatternUploadService {
                 || normalized.equals("getmachines")
                 || normalized.equals("getgridnodes")
                 || normalized.equals("getnodes");
+    }
+
+    /**
+     * Reads only direct Map fields from the AE2 grid implementation. AE2's
+     * machine registry is keyed by the concrete IGridHost class, which is the
+     * same registry used by Interface Terminal integrations. This avoids
+     * traversing live machine fields and therefore cannot resolve unrelated
+     * optional classes such as GTCEEnergyAdapter.
+     */
+    private static void collectRegisteredMachineTypes(IGrid grid,
+                                                       Set<Class<?>> machineTypes) {
+        if (grid == null) {
+            return;
+        }
+        Set<Object> seen = Collections.newSetFromMap(
+                new IdentityHashMap<Object, Boolean>());
+        for (Class<?> type = grid.getClass(); type != null && type != Object.class;
+             type = type.getSuperclass()) {
+            for (java.lang.reflect.Field field : type.getDeclaredFields()) {
+                int modifiers = field.getModifiers();
+                if (java.lang.reflect.Modifier.isStatic(modifiers)
+                        || !Map.class.isAssignableFrom(field.getType())) {
+                    continue;
+                }
+                try {
+                    field.setAccessible(true);
+                    collectRegisteredMachineTypes(field.get(grid), machineTypes, seen, 0);
+                } catch (IllegalAccessException | SecurityException | LinkageError ignored) {
+                    // An implementation may hide its registry; standard hosts remain usable.
+                }
+            }
+        }
+    }
+
+    private static void collectRegisteredMachineTypes(Object object,
+                                                        Set<Class<?>> machineTypes,
+                                                        Set<Object> seen, int depth) {
+        if (object == null || depth > 4 || !seen.add(object)
+                || machineTypes.size() >= 256) {
+            return;
+        }
+        if (object instanceof Map) {
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) object).entrySet()) {
+                Object key = entry.getKey();
+                if (key instanceof Class && IGridHost.class.isAssignableFrom((Class<?>) key)) {
+                    machineTypes.add((Class<?>) key);
+                }
+                collectRegisteredMachineTypes(entry.getValue(), machineTypes, seen, depth + 1);
+            }
+        } else if (object instanceof Iterable) {
+            for (Object value : (Iterable<?>) object) {
+                collectRegisteredMachineTypes(value, machineTypes, seen, depth + 1);
+            }
+        } else if (object.getClass().isArray()) {
+            for (int index = 0; index < Array.getLength(object); index++) {
+                collectRegisteredMachineTypes(Array.get(object, index), machineTypes, seen, depth + 1);
+            }
+        }
+    }
+
+    /**
+     * Traverses only the node collection returned by IGrid#getMachines(Class).
+     * It deliberately does not inspect fields or methods on arbitrary machine
+     * objects; optional integrations can therefore expose their own machine
+     * implementations without triggering unrelated classes during encoding.
+     */
+    private static int collectRegisteredGridNodes(List<InterfaceTarget> result,
+                                                   Set<Object> seenMachines,
+                                                   Set<Object> seenHandlers,
+                                                   Object object,
+                                                   Set<Object> seenNodes) {
+        if (object == null || seenNodes == null || !seenNodes.add(object)) {
+            return 0;
+        }
+        if (object instanceof IGridNode) {
+            IGridNode node = (IGridNode) object;
+            if (!node.isActive()) {
+                return 0;
+            }
+            Object machine = node.getMachine();
+            if (machine != null && seenMachines.add(machine)) {
+                collectKnownPatternHandlers(result, seenHandlers, machine,
+                        new ArrayList<Object>(),
+                        Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>()), 0);
+            }
+            return 1;
+        }
+        try {
+            int count = 0;
+            if (object instanceof Map) {
+                for (Object value : ((Map<?, ?>) object).values()) {
+                    count += collectRegisteredGridNodes(result, seenMachines,
+                            seenHandlers, value, seenNodes);
+                }
+            } else if (object instanceof Iterable) {
+                for (Object value : (Iterable<?>) object) {
+                    count += collectRegisteredGridNodes(result, seenMachines,
+                            seenHandlers, value, seenNodes);
+                }
+            } else if (object.getClass().isArray()) {
+                for (int index = 0; index < Array.getLength(object); index++) {
+                    count += collectRegisteredGridNodes(result, seenMachines,
+                            seenHandlers, Array.get(object, index), seenNodes);
+                }
+            }
+            return count;
+        } catch (RuntimeException | LinkageError ignored) {
+            return 0;
+        }
     }
 
     /**
@@ -1246,28 +1346,27 @@ public final class PatternUploadService {
         if (object == null) {
             return null;
         }
-        for (Class<?> type = object.getClass(); type != null; type = type.getSuperclass()) {
-            for (Method method : type.getDeclaredMethods()) {
+        try {
+            Class<?> argumentType = argument == null ? Object.class : argument.getClass();
+            for (Method method : object.getClass().getMethods()) {
                 if (!method.getName().equals(name) || method.getParameterTypes().length != 1) {
+                    continue;
+                }
+                Class<?> parameterType = method.getParameterTypes()[0];
+                if (argument == null ? parameterType.isPrimitive()
+                        : !parameterType.isAssignableFrom(argumentType)) {
                     continue;
                 }
                 try {
                     method.setAccessible(true);
                     return method.invoke(object, argument);
-                } catch (ReflectiveOperationException | SecurityException | IllegalArgumentException ignored) {
-                    // Try another overload instead of abandoning the interface lookup.
+                } catch (ReflectiveOperationException | SecurityException
+                         | IllegalArgumentException | LinkageError ignored) {
+                    // Try the next compatible public overload.
                 }
             }
-        }
-        for (Method method : object.getClass().getMethods()) {
-            if (!method.getName().equals(name) || method.getParameterTypes().length != 1) {
-                continue;
-            }
-            try {
-                return method.invoke(object, argument);
-            } catch (ReflectiveOperationException | SecurityException | IllegalArgumentException ignored) {
-                // Try the next public overload.
-            }
+        } catch (SecurityException | LinkageError ignored) {
+            // Optional integrations must not interrupt the encoder.
         }
         return null;
     }
