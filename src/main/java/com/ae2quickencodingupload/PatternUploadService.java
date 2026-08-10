@@ -159,11 +159,12 @@ public final class PatternUploadService {
             return 0;
         }
         if (isCraftingPattern(pattern)) {
-            if (target.hasCraftingPattern) {
+            boolean explicitCraftingTarget = hasCraftingCapability(target.identityLabels);
+            if (target.hasCraftingPattern
+                    && (!target.hasProcessingPattern || explicitCraftingTarget)) {
                 return 4000;
             }
-            return hasGenericCraftingName(target.identityLabels)
-                    || hasCraftingCapability(target) ? 3000 : 0;
+            return explicitCraftingTarget ? 3000 : 0;
         }
 
         NBTTagCompound metadata = getMachineData(pattern);
@@ -207,13 +208,6 @@ public final class PatternUploadService {
         score = Math.max(score, overlapScore(categories, target.existingCategories, 900));
         score = Math.max(score, catalystMatchScore(categoryUid, target.identityLabels));
         return score;
-    }
-
-    private static boolean hasCraftingCapability(InterfaceTarget target) {
-        return target != null
-                && (hasCraftingCapability(target.identityLabels)
-                || hasCraftingCapability(target.existingMachines)
-                || hasCraftingCapability(target.existingProcessing));
     }
 
     private static boolean hasCraftingCapability(Set<String> labels) {
@@ -396,7 +390,13 @@ public final class PatternUploadService {
             if (existing == null || existing.isEmpty()) {
                 continue;
             }
-            target.hasCraftingPattern |= isCraftingPattern(existing);
+            if (existing.getItem() instanceof appeng.api.implementations.ICraftingPatternItem) {
+                if (isCraftingPattern(existing)) {
+                    target.hasCraftingPattern = true;
+                } else {
+                    target.hasProcessingPattern = true;
+                }
+            }
             NBTTagCompound metadata = getMachineData(existing);
             if (metadata == null) {
                 continue;
@@ -798,6 +798,7 @@ public final class PatternUploadService {
         private final Set<String> existingProcessing = new LinkedHashSet<>();
         private final Set<String> existingCategories = new LinkedHashSet<>();
         private boolean hasCraftingPattern;
+        private boolean hasProcessingPattern;
 
         private InterfaceTarget(IItemHandler patterns) {
             this.patterns = patterns;
