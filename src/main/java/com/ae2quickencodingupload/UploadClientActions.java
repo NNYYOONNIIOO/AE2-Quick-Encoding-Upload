@@ -12,6 +12,8 @@ import java.util.List;
 /** Shared client-side install and click path for the upload control. */
 @SideOnly(Side.CLIENT)
 public final class UploadClientActions {
+    private static GuiScreen stateRequestGui;
+
     private UploadClientActions() {
     }
 
@@ -22,6 +24,10 @@ public final class UploadClientActions {
         List<GuiButton> buttons = suppliedButtons != null ? suppliedButtons : buttonList(gui);
         if (buttons == null) {
             return;
+        }
+        if (stateRequestGui != gui) {
+            stateRequestGui = gui;
+            UploadNetwork.requestAutomaticState();
         }
 
         UploadButton uploadButton = findUploadButton(buttons);

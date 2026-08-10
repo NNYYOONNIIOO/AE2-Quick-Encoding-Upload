@@ -1,5 +1,12 @@
 package com.ae2quickencodingupload;
 
+import appeng.api.networking.IGrid;
+import appeng.api.networking.IGridNode;
+import appeng.helpers.IInterfaceHost;
+import appeng.parts.misc.PartInterface;
+import appeng.tile.misc.TileInterface;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.inventory.Container;
 import net.minecraft.item.ItemStack;
@@ -20,6 +27,8 @@ import java.util.Set;
 
 /** Server-side movement of encoded patterns into matching ME interfaces on the player's AE2 network. */
 public final class PatternUploadService {
+    private static final Logger LOGGER = LogManager.getLogger("ae2_quick_encoding_upload");
+
     private PatternUploadService() {
     }
 
@@ -27,18 +36,15 @@ public final class PatternUploadService {
         if (player == null || !hasUploadableInventory(player)) {
             return 0;
         }
-        Object grid = findGrid(player.openContainer);
+        IGrid grid = findGridFromPlayer(player);
         if (grid == null) {
-            // The action is deliberately independent of the current GUI.  A pattern terminal,
-            // encoder, wireless terminal, or any other network-backed container may provide the
-            // player's current grid; the target interfaces are queried from that grid directly.
-            grid = findGrid(player);
-        }
-        if (grid == null) {
+            LOGGER.warn("Pattern upload skipped for {}: no AE2 grid found.", player.getName());
             return 0;
         }
         List<InterfaceTarget> targets = findTargets(grid);
         if (targets.isEmpty()) {
+            LOGGER.warn("Pattern upload skipped for {}: no real AE2 interfaces found on {}.",
+                    player.getName(), grid.getClass().getName());
             return 0;
         }
         int moved = uploadList(player.inventory.mainInventory, targets);
@@ -46,7 +52,12 @@ public final class PatternUploadService {
         if (moved > 0) {
             player.inventory.markDirty();
             player.inventoryContainer.detectAndSendChanges();
+            if (player.openContainer != null) {
+                player.openContainer.detectAndSendChanges();
+            }
         }
+        LOGGER.info("Pattern upload for {}: grid={}, interfaces={}, moved={}",
+                player.getName(), grid.getClass().getName(), targets.size(), moved);
         return moved;
     }
 
@@ -76,15 +87,18 @@ public final class PatternUploadService {
             if (!isUploadable(remaining)) {
                 continue;
             }
-            for (InterfaceTarget target : targets) {
-                if (remaining.isEmpty() || !matches(remaining, target)) {
-                    continue;
+            while (!remaining.isEmpty()) {
+                InterfaceTarget target = findBestTarget(remaining, targets);
+                if (target == null) {
+                    break;
                 }
+                int before = remaining.getCount();
                 ItemStack after = insertIntoEmptyPatternSlots(target.patterns, remaining);
-                if (after.getCount() < remaining.getCount()) {
-                    moved += remaining.getCount() - after.getCount();
-                    remaining = after;
+                if (after.getCount() >= before) {
+                    break;
                 }
+                moved += before - after.getCount();
+                remaining = after;
             }
             inventory.set(index, remaining.isEmpty() ? ItemStack.EMPTY : remaining);
         }
@@ -119,29 +133,90 @@ public final class PatternUploadService {
                 && (isCraftingPattern(stack) || getMachineData(stack) != null);
     }
 
-    private static boolean matches(ItemStack pattern, InterfaceTarget target) {
-        if (isCraftingPattern(pattern)) {
-            return target.hasCraftingPattern || hasGenericCraftingName(target.labels);
-        }
-        NBTTagCompound metadata = getMachineData(pattern);
-        if (metadata == null) {
-            return false;
-        }
-        String category = first(metadata, "CategoryUid", "category", "categoryUid", "recipeCategory");
-        if (!category.isEmpty() && target.categories.contains(normalize(category))) {
-            return true;
-        }
-        Set<String> aliases = new LinkedHashSet<>();
-        addValues(aliases, metadata,
-                "MachineName", "machine", "MachineNames",
-                "ProcessingMethod", "processing", "ProcessingMethods", "Methods", "methods",
-                "CategoryUid", "category", "categoryUid", "recipeCategory");
-        for (String alias : aliases) {
-            if (target.labels.contains(normalize(alias))) {
-                return true;
+    private static InterfaceTarget findBestTarget(ItemStack pattern,
+                                                   List<InterfaceTarget> targets) {
+        InterfaceTarget best = null;
+        int bestScore = 0;
+        for (InterfaceTarget target : targets) {
+            int score = matchScore(pattern, target);
+            LOGGER.debug("Pattern target candidate host={}, score={}, labels={}, slots={}",
+                    target.hostClassName, score, target.identityLabels,
+                    countEmptyPatternSlots(target.patterns));
+            if (score > bestScore) {
+                best = target;
+                bestScore = score;
             }
         }
-        return false;
+        if (best != null) {
+            LOGGER.info("Selected pattern upload target host={}, score={}, labels={}",
+                    best.hostClassName, bestScore, best.identityLabels);
+        }
+        return best;
+    }
+
+    private static int matchScore(ItemStack pattern, InterfaceTarget target) {
+        if (!hasEmptyPatternSlot(target.patterns)) {
+            return 0;
+        }
+        if (isCraftingPattern(pattern)) {
+            if (target.hasCraftingPattern) {
+                return 4000;
+            }
+            return hasGenericCraftingName(target.identityLabels) ? 3000 : 0;
+        }
+
+        NBTTagCompound metadata = getMachineData(pattern);
+        if (metadata == null) {
+            return 0;
+        }
+
+        Set<String> processing = new LinkedHashSet<>();
+        addValues(processing, metadata,
+                "ProcessingMethod", "processing", "ProcessingMethods", "Methods", "methods");
+        Set<String> machines = new LinkedHashSet<>();
+        addValues(machines, metadata, "MachineName", "machine", "MachineNames");
+
+        // CategoryUid is deliberately not a standalone match. Categories such as
+        // minecraft.smelting are shared by several machines and cannot identify an
+        // interface. Processing/machine aliases are compared first, with the
+        // processing method taking precedence as in AE2's terminal routing.
+        int score = 0;
+        score = Math.max(score, overlapScore(processing, target.identityLabels, 1200));
+        score = Math.max(score, overlapScore(machines, target.identityLabels, 1000));
+        // Existing patterns are aliases supplied by the player. They are useful
+        // candidates, but remain below the current interface name so an unrelated
+        // interface is never selected merely because its category is shared.
+        score = Math.max(score, overlapScore(processing, target.existingProcessing, 800));
+        score = Math.max(score, overlapScore(machines, target.existingMachines, 700));
+        return score;
+    }
+
+    private static int overlapScore(Set<String> values, Set<String> candidates, int score) {
+        for (String value : values) {
+            if (candidates.contains(value)) {
+                return score;
+            }
+        }
+        return 0;
+    }
+
+    private static boolean hasEmptyPatternSlot(IItemHandler patterns) {
+        return countEmptyPatternSlots(patterns) > 0;
+    }
+
+    private static int countEmptyPatternSlots(IItemHandler patterns) {
+        int empty = 0;
+        for (int slot = 0; slot < patterns.getSlots(); slot++) {
+            try {
+                ItemStack existing = patterns.getStackInSlot(slot);
+                if (existing == null || existing.isEmpty()) {
+                    empty++;
+                }
+            } catch (RuntimeException ignored) {
+                // Continue checking the other slots.
+            }
+        }
+        return empty;
     }
 
     private static boolean hasGenericCraftingName(Set<String> labels) {
@@ -155,51 +230,70 @@ public final class PatternUploadService {
         return false;
     }
 
-    private static List<InterfaceTarget> findTargets(Object grid) {
+    private static List<InterfaceTarget> findTargets(IGrid grid) {
         List<InterfaceTarget> result = new ArrayList<>();
         Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>());
-        for (String className : new String[]{
-                "appeng.helpers.IInterfaceHost",
-                "appeng.parts.misc.PartInterface", "appeng.tile.misc.TileInterface",
-                "appeng.api.networking.IGridHost"}) {
-            try {
-                Object machines = invokeOneArg(grid, "getMachines", Class.forName(className));
-                List<Object> hosts = new ArrayList<>();
-                addObjects(hosts, machines);
-                for (Object host : hosts) {
-                    if (host == null || !seen.add(host)) {
-                        continue;
-                    }
-                    Object duality = invokeNoArg(host, "getInterfaceDuality");
-                    IItemHandler patterns = asHandler(
-                            invokeOneArg(duality, "getInventoryByName", "patterns"));
-                    if (patterns == null) {
-                        patterns = asHandler(
-                                invokeOneArg(host, "getInventoryByName", "patterns"));
-                    }
-                    if (patterns == null) {
-                        patterns = asHandler(invokeNoArg(duality, "getPatterns"));
-                    }
-                    if (patterns == null) {
-                        patterns = asHandler(invokeNoArg(host, "getPatterns"));
-                    }
-                    if (patterns == null) {
-                        continue;
-                    }
-                    InterfaceTarget target = new InterfaceTarget(patterns);
-                    addObjectLabels(target.labels, host);
-                    addObjectLabels(target.labels, duality);
-                    addStackLabels(target.labels, invokeNoArg(host, "getItemStackRepresentation"));
-                    addStackLabels(target.labels, invokeNoArg(duality, "getItemStackRepresentation"));
-                    readHandlerLabels(target.labels, asHandler(invokeNoArg(duality, "getConfig")));
-                    readExistingPatterns(target);
-                    result.add(target);
-                }
-            } catch (ClassNotFoundException ignored) {
-                // This AE2 build does not expose one of the two interface host classes.
-            }
+        try {
+            // Use the same two machine classes as AE2's own interface terminal.
+            // The grid returns IGridNodes, not the machine objects themselves.
+            collectInterfaceTargets(result, seen, grid.getMachines(TileInterface.class));
+            collectInterfaceTargets(result, seen, grid.getMachines(PartInterface.class));
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Could not enumerate AE2 interface hosts from {}.",
+                    grid.getClass().getName(), exception);
         }
         return result;
+    }
+
+    private static void collectInterfaceTargets(List<InterfaceTarget> result,
+                                                 Set<Object> seen,
+                                                 Iterable<IGridNode> nodes) {
+        if (nodes == null) {
+            return;
+        }
+        for (IGridNode node : nodes) {
+            if (node == null || !node.isActive()) {
+                continue;
+            }
+
+            Object machine = node.getMachine();
+            if (!(machine instanceof IInterfaceHost) || !seen.add(machine)) {
+                continue;
+            }
+
+            IInterfaceHost host = (IInterfaceHost) machine;
+            IItemHandler patterns = null;
+            if (machine instanceof TileInterface) {
+                patterns = ((TileInterface) machine).getInventoryByName("patterns");
+            } else if (machine instanceof PartInterface) {
+                patterns = ((PartInterface) machine).getInventoryByName("patterns");
+            }
+
+            Object duality = invokeNoArg(host, "getInterfaceDuality");
+            if (patterns == null) {
+                patterns = asHandler(
+                        invokeOneArg(duality, "getInventoryByName", "patterns"));
+            }
+            if (patterns == null) {
+                patterns = asHandler(invokeNoArg(host, "getPatterns"));
+            }
+            if (patterns == null) {
+                patterns = asHandler(invokeNoArg(duality, "getPatterns"));
+            }
+            if (patterns == null) {
+                LOGGER.debug("Skipped AE2 interface host {}: no patterns inventory.",
+                        host.getClass().getName());
+                continue;
+            }
+            InterfaceTarget target = new InterfaceTarget(patterns);
+            target.hostClassName = host.getClass().getName();
+            addObjectLabels(target.identityLabels, host);
+            addObjectLabels(target.identityLabels, duality);
+            readExistingPatterns(target);
+            result.add(target);
+            LOGGER.debug("Accepted AE2 interface {} with {} pattern slots and labels {}.",
+                    host.getClass().getName(), patterns.getSlots(), target.identityLabels);
+        }
     }
 
     private static void readHandlerLabels(Set<String> labels, IItemHandler handler) {
@@ -231,14 +325,10 @@ public final class PatternUploadService {
             if (metadata == null) {
                 continue;
             }
-            String category = first(metadata, "CategoryUid", "category", "categoryUid", "recipeCategory");
-            if (!category.isEmpty()) {
-                target.categories.add(normalize(category));
-            }
-            addValues(target.labels, metadata,
-                    "MachineName", "machine", "MachineNames",
-                    "ProcessingMethod", "processing", "ProcessingMethods", "Methods", "methods",
-                    "CategoryUid", "category", "categoryUid", "recipeCategory");
+            addValues(target.existingMachines, metadata,
+                    "MachineName", "machine", "MachineNames");
+            addValues(target.existingProcessing, metadata,
+                    "ProcessingMethod", "processing", "ProcessingMethods", "Methods", "methods");
         }
     }
 
@@ -247,12 +337,12 @@ public final class PatternUploadService {
             return;
         }
         for (String method : new String[]{
-                "getCustomName", "getName", "getInterfaceName", "getUnlocalizedName",
-                "getDisplayName", "getMachineName", "getLabel"}) {
+                "getTermName", "getCustomName", "getInterfaceName", "getMachineName",
+                "getLabel", "getDisplayName"}) {
             addLabel(labels, invokeNoArg(object, method));
         }
         for (String field : new String[]{
-                "customName", "name", "interfaceName", "unlocalizedName", "machineName", "label"}) {
+                "customName", "myName", "interfaceName", "machineName", "label"}) {
             addLabel(labels, readField(object, field));
         }
     }
@@ -347,6 +437,35 @@ public final class PatternUploadService {
                 Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>()), 0);
     }
 
+    private static IGrid findGridFromPlayer(EntityPlayerMP player) {
+        // PatternTerm/PatternEncoder containers are AEBaseContainers. Their connected
+        // network is owned by the action host, even though no interface-terminal GUI
+        // is open. This is the same source AE2 uses for its terminal containers.
+        Object actionHost = invokeNoArg(player.openContainer, "getActionHost");
+        Object actionableNode = invokeNoArg(actionHost, "getActionableNode");
+        IGrid grid = asGrid(invokeNoArg(actionableNode, "getGrid"));
+        if (grid != null) {
+            return grid;
+        }
+        grid = asGrid(invokeNoArg(player.openContainer, "getNetwork"));
+        if (grid != null) {
+            return grid;
+        }
+        grid = asGrid(invokeNoArg(player.openContainer, "getGrid"));
+        if (grid != null) {
+            return grid;
+        }
+        grid = asGrid(findGrid(player.openContainer));
+        if (grid != null) {
+            return grid;
+        }
+        return asGrid(findGrid(player));
+    }
+
+    private static IGrid asGrid(Object value) {
+        return value instanceof IGrid ? (IGrid) value : null;
+    }
+
     private static Object findGridDeep(Object object, Set<Object> seen, int depth) {
         if (object == null || depth > 12 || !seen.add(object)) {
             return null;
@@ -430,6 +549,17 @@ public final class PatternUploadService {
     private static Object findGridFrom(Object object) {
         if (object == null) {
             return null;
+        }
+        Object actionHost = invokeNoArg(object, "getActionHost");
+        Object actionableNode = invokeNoArg(actionHost, "getActionableNode");
+        Object actionableGrid = invokeNoArg(actionableNode, "getGrid");
+        if (isGridLike(actionableGrid)) {
+            return actionableGrid;
+        }
+        actionableNode = invokeNoArg(object, "getActionableNode");
+        actionableGrid = invokeNoArg(actionableNode, "getGrid");
+        if (actionableGrid instanceof IGrid) {
+            return actionableGrid;
         }
         // AE2's network-backed containers expose the connected IGrid as getNetwork().
         // This is the normal path for the pattern encoder and does not require an
@@ -560,8 +690,10 @@ public final class PatternUploadService {
 
     private static final class InterfaceTarget {
         private final IItemHandler patterns;
-        private final Set<String> labels = new LinkedHashSet<>();
-        private final Set<String> categories = new LinkedHashSet<>();
+        private String hostClassName = "unknown";
+        private final Set<String> identityLabels = new LinkedHashSet<>();
+        private final Set<String> existingMachines = new LinkedHashSet<>();
+        private final Set<String> existingProcessing = new LinkedHashSet<>();
         private boolean hasCraftingPattern;
 
         private InterfaceTarget(IItemHandler patterns) {
