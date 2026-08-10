@@ -48,7 +48,9 @@ public abstract class MixinItemEncodedPatternTooltip {
 
         Set<String> machineNames = new LinkedHashSet<>();
         collectMachineValues(metadata, machineNames, processingAliases,
-                "MachineName", "machineName", "Machine", "machine", "MachineNames");
+                true, "MachineName", "machineName", "Machine", "machine");
+        collectMachineValues(metadata, machineNames, processingAliases,
+                false, "MachineNames");
         if (machineNames.isEmpty()) {
             return;
         }
@@ -85,14 +87,17 @@ public abstract class MixinItemEncodedPatternTooltip {
     }
 
     private static void collectMachineValues(NBTTagCompound metadata, Set<String> values,
-                                             Set<String> processingAliases, String... keys) {
+                                             Set<String> processingAliases,
+                                             boolean allowProcessingAlias, String... keys) {
         for (String key : keys) {
             if (metadata.hasKey(key, 8)) {
-                addMachineValue(values, processingAliases, metadata.getString(key));
+                addMachineValue(values, processingAliases, allowProcessingAlias,
+                        metadata.getString(key));
             } else if (metadata.hasKey(key, 9)) {
                 NBTTagList list = metadata.getTagList(key, 8);
                 for (int index = 0; index < list.tagCount(); index++) {
-                    addMachineValue(values, processingAliases, list.getStringTagAt(index));
+                    addMachineValue(values, processingAliases, allowProcessingAlias,
+                            list.getStringTagAt(index));
                 }
             }
         }
@@ -106,7 +111,7 @@ public abstract class MixinItemEncodedPatternTooltip {
     }
 
     private static void addMachineValue(Set<String> values, Set<String> processingAliases,
-                                        String rawValue) {
+                                        boolean allowProcessingAlias, String rawValue) {
         String value = cleanText(rawValue);
         if (value == null || value.isEmpty() || value.equalsIgnoreCase("Nothing")) {
             return;
@@ -124,10 +129,26 @@ public abstract class MixinItemEncodedPatternTooltip {
         }
 
         String normalized = value.toLowerCase(Locale.ROOT);
-        if (processingAliases.contains(normalized) || isUnlocalizedIdentifier(value, normalized)) {
+        // MachineName is the explicitly selected machine and must remain visible
+        // even when a recipe uses the same localized word as its processing
+        // method (for example, "压缩机"). Alias entries such as "compressor",
+        // "Smelting" and registry identifiers are still filtered from the
+        // expanded list.
+        if (isUnlocalizedIdentifier(value, normalized)
+                || (!allowProcessingAlias && processingAliases.contains(normalized)
+                && isAsciiAlias(value))) {
             return;
         }
         values.add(value);
+    }
+
+    private static boolean isAsciiAlias(String value) {
+        for (int index = 0; index < value.length(); index++) {
+            if (value.charAt(index) > 127) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static String cleanText(String value) {
