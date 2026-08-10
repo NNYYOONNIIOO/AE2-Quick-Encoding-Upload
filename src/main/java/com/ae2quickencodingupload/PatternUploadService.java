@@ -1,6 +1,7 @@
 package com.ae2quickencodingupload;
 
 import appeng.api.networking.IGrid;
+import appeng.api.networking.IGridHost;
 import appeng.api.networking.IGridNode;
 import appeng.helpers.IInterfaceHost;
 import appeng.parts.misc.PartInterface;
@@ -312,6 +313,7 @@ public final class PatternUploadService {
             LOGGER.warn("Could not enumerate AE2 interface hosts from {}.",
                     grid.getClass().getName(), exception);
         }
+        collectReflectivePatternTargets(result, seen, grid);
         return result;
     }
 
@@ -357,6 +359,10 @@ public final class PatternUploadService {
             }
             InterfaceTarget target = new InterfaceTarget(patterns);
             target.hostClassName = host.getClass().getName();
+            addLabel(target.identityLabels, host.getClass().getName());
+            if (duality != null) {
+                addLabel(target.identityLabels, duality.getClass().getName());
+            }
             addObjectLabels(target.identityLabels, host);
             addObjectLabels(target.identityLabels, duality);
             readExistingPatterns(target);
@@ -364,6 +370,224 @@ public final class PatternUploadService {
             LOGGER.debug("Accepted AE2 interface {} with {} pattern slots and labels {}.",
                     host.getClass().getName(), patterns.getSlots(), target.identityLabels);
         }
+    }
+
+    /**
+     * Finds optional network machines that expose pattern inventories without
+     * implementing AE2's IInterfaceHost. Interface Terminal integrations use
+     * the same kind of network entry, so the upload button must not limit itself
+     * to the two built-in AE2 interface classes.
+     */
+    private static void collectReflectivePatternTargets(List<InterfaceTarget> result,
+                                                         Set<Object> seenMachines,
+                                                         IGrid grid) {
+        Set<IGridNode> nodes = Collections.newSetFromMap(
+                new IdentityHashMap<IGridNode, Boolean>());
+        try {
+            for (IGridNode node : grid.getMachines(IGridHost.class)) {
+                if (node != null) {
+                    nodes.add(node);
+                }
+            }
+        } catch (RuntimeException exception) {
+            LOGGER.debug("Could not enumerate all AE2 grid hosts directly.", exception);
+        }
+        collectGridNodesDeep(grid,
+                Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>()), nodes, 0);
+
+        Set<Object> seenHandlers = Collections.newSetFromMap(
+                new IdentityHashMap<Object, Boolean>());
+        for (IGridNode node : nodes) {
+            if (node == null || !node.isActive()) {
+                continue;
+            }
+            Object machine = node.getMachine();
+            if (machine == null || !seenMachines.add(machine)) {
+                continue;
+            }
+            collectPatternHandlers(result, seenHandlers, machine,
+                    new ArrayList<Object>(),
+                    Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>()), 0);
+        }
+        LOGGER.debug("Discovered {} additional network pattern targets.",
+                Math.max(0, result.size()));
+    }
+
+    private static void collectGridNodesDeep(Object object, Set<Object> seen,
+                                             Set<IGridNode> nodes, int depth) {
+        if (object == null || depth > 10 || !seen.add(object)) {
+            return;
+        }
+        if (object instanceof IGridNode) {
+            IGridNode node = (IGridNode) object;
+            if (node.isActive()) {
+                nodes.add(node);
+            }
+            return;
+        }
+        if (object instanceof Map) {
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) object).entrySet()) {
+                collectGridNodesDeep(entry.getKey(), seen, nodes, depth + 1);
+                collectGridNodesDeep(entry.getValue(), seen, nodes, depth + 1);
+            }
+            return;
+        }
+        if (object instanceof Iterable) {
+            for (Object value : (Iterable<?>) object) {
+                collectGridNodesDeep(value, seen, nodes, depth + 1);
+            }
+            return;
+        }
+        if (object.getClass().isArray()) {
+            for (int index = 0; index < Array.getLength(object); index++) {
+                collectGridNodesDeep(Array.get(object, index), seen, nodes, depth + 1);
+            }
+            return;
+        }
+        if (object instanceof CharSequence || object instanceof Number
+                || object instanceof Class || object.getClass().isEnum()) {
+            return;
+        }
+
+        for (Class<?> type = object.getClass(); type != null && type != Object.class;
+             type = type.getSuperclass()) {
+            for (java.lang.reflect.Field field : type.getDeclaredFields()) {
+                int modifiers = field.getModifiers();
+                if (java.lang.reflect.Modifier.isStatic(modifiers)
+                        || field.getType().isPrimitive() || field.isSynthetic()) {
+                    continue;
+                }
+                Object value;
+                try {
+                    field.setAccessible(true);
+                    value = field.get(object);
+                } catch (IllegalAccessException | SecurityException ignored) {
+                    continue;
+                }
+                if (isGridTraversalMember(field.getName(), value)) {
+                    collectGridNodesDeep(value, seen, nodes, depth + 1);
+                }
+            }
+        }
+    }
+
+    private static boolean isGridTraversalMember(String name, Object value) {
+        if (value == null) {
+            return false;
+        }
+        if (value instanceof IGridNode || value instanceof Map || value instanceof Iterable
+                || value.getClass().isArray()) {
+            return true;
+        }
+        String normalized = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        return normalized.contains("node") || normalized.contains("machine")
+                || normalized.contains("grid") || normalized.contains("network")
+                || normalized.contains("map") || normalized.contains("data")
+                || normalized.contains("value") || normalized.contains("list")
+                || normalized.contains("class") || normalized.contains("backing");
+    }
+
+    private static void collectPatternHandlers(List<InterfaceTarget> result,
+                                               Set<Object> seenHandlers,
+                                               Object object, List<Object> context,
+                                               Set<Object> seen, int depth) {
+        if (object == null || depth > 5 || !seen.add(object)) {
+            return;
+        }
+        if (object instanceof IItemHandler) {
+            addPatternTarget(result, seenHandlers, (IItemHandler) object, context);
+            return;
+        }
+
+        List<Object> nextContext = new ArrayList<>(context);
+        nextContext.add(object);
+        if (object instanceof Map) {
+            for (Object value : ((Map<?, ?>) object).values()) {
+                collectPatternHandlers(result, seenHandlers, value, nextContext, seen, depth + 1);
+            }
+            return;
+        }
+        if (object instanceof Iterable) {
+            for (Object value : (Iterable<?>) object) {
+                collectPatternHandlers(result, seenHandlers, value, nextContext, seen, depth + 1);
+            }
+            return;
+        }
+        if (object.getClass().isArray()) {
+            for (int index = 0; index < Array.getLength(object); index++) {
+                collectPatternHandlers(result, seenHandlers, Array.get(object, index),
+                        nextContext, seen, depth + 1);
+            }
+            return;
+        }
+        if (object instanceof CharSequence || object instanceof Number
+                || object instanceof Class || object.getClass().isEnum()) {
+            return;
+        }
+
+        for (Class<?> type = object.getClass(); type != null && type != Object.class;
+             type = type.getSuperclass()) {
+            for (Method method : type.getDeclaredMethods()) {
+                String name = method.getName();
+                String normalized = name.toLowerCase(Locale.ROOT);
+                try {
+                    method.setAccessible(true);
+                    Object value = null;
+                    if (method.getParameterTypes().length == 0
+                            && isPatternAccessor(normalized)) {
+                        value = method.invoke(object);
+                    } else if (method.getParameterTypes().length == 1
+                            && method.getParameterTypes()[0] == String.class
+                            && normalized.contains("inventory")) {
+                        value = method.invoke(object, "patterns");
+                    }
+                    if (value != null) {
+                        collectPatternHandlers(result, seenHandlers, value,
+                                nextContext, seen, depth + 1);
+                    }
+                } catch (ReflectiveOperationException | RuntimeException ignored) {
+                    // Optional integrations can expose incompatible accessors.
+                }
+            }
+            for (java.lang.reflect.Field field : type.getDeclaredFields()) {
+                int modifiers = field.getModifiers();
+                if (java.lang.reflect.Modifier.isStatic(modifiers)
+                        || field.isSynthetic() || !isPatternAccessor(field.getName().toLowerCase(Locale.ROOT))) {
+                    continue;
+                }
+                try {
+                    field.setAccessible(true);
+                    Object value = field.get(object);
+                    collectPatternHandlers(result, seenHandlers, value,
+                            nextContext, seen, depth + 1);
+                } catch (IllegalAccessException | RuntimeException ignored) {
+                    // Continue through other optional pattern stores.
+                }
+            }
+        }
+    }
+
+    private static boolean isPatternAccessor(String normalizedName) {
+        return normalizedName.contains("pattern") || normalizedName.contains("store");
+    }
+
+    private static void addPatternTarget(List<InterfaceTarget> result,
+                                         Set<Object> seenHandlers, IItemHandler patterns,
+                                         List<Object> context) {
+        if (patterns == null || !seenHandlers.add(patterns) || patterns.getSlots() <= 0) {
+            return;
+        }
+        InterfaceTarget target = new InterfaceTarget(patterns);
+        target.hostClassName = context.isEmpty() ? patterns.getClass().getName()
+                : context.get(0).getClass().getName();
+        for (Object source : context) {
+            addLabel(target.identityLabels, source.getClass().getName());
+            addObjectLabels(target.identityLabels, source);
+        }
+        readExistingPatterns(target);
+        result.add(target);
+        LOGGER.debug("Accepted optional network pattern target {} with {} slots and labels {}.",
+                target.hostClassName, patterns.getSlots(), target.identityLabels);
     }
 
     private static void readHandlerLabels(Set<String> labels, IItemHandler handler) {
@@ -411,20 +635,70 @@ public final class PatternUploadService {
     }
 
     private static void addObjectLabels(Set<String> labels, Object object) {
-        if (object == null) {
+        addObjectLabels(labels, object, 0,
+                Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>()));
+    }
+
+    private static void addObjectLabels(Set<String> labels, Object object, int depth,
+                                        Set<Object> seen) {
+        if (object == null || depth > 2 || !seen.add(object)) {
             return;
         }
-        for (String method : new String[]{
-                "getTermName", "getCustomName", "getInterfaceName", "getMachineName",
-                "getName", "getNameString", "getUnlocalizedName", "getConfigName",
-                "getLabel", "getDisplayName"}) {
-            addLabel(labels, invokeNoArg(object, method));
+        for (Class<?> type = object.getClass(); type != null && type != Object.class;
+             type = type.getSuperclass()) {
+            for (Method method : type.getDeclaredMethods()) {
+                if (method.getParameterTypes().length != 0
+                        || !isLabelMember(method.getName())) {
+                    continue;
+                }
+                try {
+                    method.setAccessible(true);
+                    Object value = method.invoke(object);
+                    addLabel(labels, value);
+                    if (!isSimpleLabelValue(value)) {
+                        addObjectLabels(labels, value, depth + 1, seen);
+                    }
+                } catch (ReflectiveOperationException | SecurityException ignored) {
+                    // Continue through other names exposed by this AE2 implementation.
+                }
+            }
+            for (java.lang.reflect.Field field : type.getDeclaredFields()) {
+                int modifiers = field.getModifiers();
+                if (java.lang.reflect.Modifier.isStatic(modifiers)
+                        || !isLabelMember(field.getName())) {
+                    continue;
+                }
+                try {
+                    field.setAccessible(true);
+                    Object value = field.get(object);
+                    addLabel(labels, value);
+                    if (!isSimpleLabelValue(value)) {
+                        addObjectLabels(labels, value, depth + 1, seen);
+                    }
+                } catch (IllegalAccessException | SecurityException ignored) {
+                    // Continue through other fields exposed by this AE2 implementation.
+                }
+            }
         }
-        for (String field : new String[]{
-                "customName", "myName", "interfaceName", "machineName", "name",
-                "nameString", "unlocalizedName", "configName", "termName", "label"}) {
-            addLabel(labels, readField(object, field));
+    }
+
+    private static boolean isLabelMember(String name) {
+        if (name == null) {
+            return false;
         }
+        String normalized = name.toLowerCase(Locale.ROOT);
+        return normalized.contains("name") || normalized.contains("label")
+                || normalized.contains("term") || normalized.contains("interface")
+                || normalized.contains("custom") || normalized.contains("display")
+                || normalized.contains("unlocalized") || normalized.contains("config")
+                || normalized.contains("setting") || normalized.contains("title");
+    }
+
+    private static boolean isSimpleLabelValue(Object value) {
+        return value == null || value instanceof String
+                || value instanceof net.minecraft.util.text.ITextComponent
+                || value instanceof Number || value instanceof Boolean
+                || value.getClass().isEnum();
     }
 
     private static void addStackLabels(Set<String> labels, Object value) {
