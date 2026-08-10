@@ -162,7 +162,8 @@ public final class PatternUploadService {
             if (target.hasCraftingPattern) {
                 return 4000;
             }
-            return hasGenericCraftingName(target.identityLabels) ? 3000 : 0;
+            return hasGenericCraftingName(target.identityLabels)
+                    || hasCraftingCapability(target) ? 3000 : 0;
         }
 
         NBTTagCompound metadata = getMachineData(pattern);
@@ -206,6 +207,32 @@ public final class PatternUploadService {
         score = Math.max(score, overlapScore(categories, target.existingCategories, 900));
         score = Math.max(score, catalystMatchScore(categoryUid, target.identityLabels));
         return score;
+    }
+
+    private static boolean hasCraftingCapability(InterfaceTarget target) {
+        return target != null
+                && (hasCraftingCapability(target.identityLabels)
+                || hasCraftingCapability(target.existingMachines)
+                || hasCraftingCapability(target.existingProcessing));
+    }
+
+    private static boolean hasCraftingCapability(Set<String> labels) {
+        if (labels == null) {
+            return false;
+        }
+        for (String label : labels) {
+            String normalized = normalize(label);
+            if (normalized.contains("craft") || normalized.contains("assembl")
+                    || normalized.contains("molecular")
+                    || normalized.contains("\u5206\u5b50")
+                    || normalized.contains("\u5408\u6210")
+                    || normalized.contains("\u88c5\u914d")
+                    || normalized.contains("\u5236\u4f5c")
+                    || normalized.contains("\u5236\u9020")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static int catalystMatchScore(String categoryUid, Set<String> targetLabels) {
@@ -422,6 +449,9 @@ public final class PatternUploadService {
             if (!normalized.isEmpty()) {
                 labels.add(normalized);
             }
+        } else if (value instanceof net.minecraft.util.text.ITextComponent) {
+            addLabel(labels,
+                    ((net.minecraft.util.text.ITextComponent) value).getUnformattedText());
         }
     }
 
