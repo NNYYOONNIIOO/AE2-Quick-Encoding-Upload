@@ -128,26 +128,9 @@ public final class PatternUploadService {
     }
 
     private static boolean isUploadable(ItemStack stack) {
-        if (stack == null || stack.isEmpty()
-                || !(stack.getItem() instanceof appeng.api.implementations.ICraftingPatternItem)) {
-            return false;
-        }
-        if (isCraftingPattern(stack)) {
-            return true;
-        }
-        return hasMachineAliases(getMachineData(stack));
-    }
-
-    private static boolean hasMachineAliases(NBTTagCompound metadata) {
-        if (metadata == null || metadata.hasNoTags()) {
-            return false;
-        }
-        Set<String> aliases = new LinkedHashSet<>();
-        addValues(aliases, metadata,
-                "MachineName", "machine", "MachineNames",
-                "ProcessingMethod", "processing", "ProcessingMethods",
-                "Methods", "methods");
-        return !aliases.isEmpty();
+        return stack != null && !stack.isEmpty()
+                && stack.getItem() instanceof appeng.api.implementations.ICraftingPatternItem
+                && (isCraftingPattern(stack) || getMachineData(stack) != null);
     }
 
     private static InterfaceTarget findBestTarget(ItemStack pattern,
