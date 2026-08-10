@@ -68,7 +68,7 @@ dependencies {
 
     implementation fg.deobf("curse.maven:had-enough-items-557549:8576621")
     implementation fg.deobf("curse.maven:ae2-extended-life-570458:6302098")
-    implementation files('libs/ae2_quick_encoding-1.0.0.jar')
+    implementation fg.deobf("curse.maven:ae2-quick-encoding-1645150:8606769")
 
     def mixin = 'zone.rong:mixinbooter:11.13'
     implementation(mixin) {
