@@ -383,6 +383,8 @@ public final class PatternUploadService {
                                                          IGrid grid) {
         Set<IGridNode> nodes = Collections.newSetFromMap(
                 new IdentityHashMap<IGridNode, Boolean>());
+        Set<Class<?>> machineTypes = new LinkedHashSet<>();
+        machineTypes.add(IGridHost.class);
         try {
             for (IGridNode node : grid.getMachines(IGridHost.class)) {
                 if (node != null) {
@@ -392,8 +394,20 @@ public final class PatternUploadService {
         } catch (RuntimeException exception) {
             LOGGER.debug("Could not enumerate all AE2 grid hosts directly.", exception);
         }
+        collectMachineTypesDeep(grid,
+                Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>()),
+                machineTypes, 0);
+        Set<Object> nodeScan = Collections.newSetFromMap(
+                new IdentityHashMap<Object, Boolean>());
+        for (Class<?> machineType : machineTypes) {
+            Object machineNodes = invokeOneArg(grid, "getMachines", machineType);
+            collectGridNodesDeep(machineNodes, nodeScan, nodes, 0);
+        }
         collectGridNodesDeep(grid,
                 Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>()), nodes, 0);
+
+        LOGGER.debug("Network machine discovery found {} types and {} active nodes.",
+                machineTypes.size(), nodes.size());
 
         Set<Object> seenHandlers = Collections.newSetFromMap(
                 new IdentityHashMap<Object, Boolean>());
@@ -411,6 +425,106 @@ public final class PatternUploadService {
         }
         LOGGER.debug("Discovered {} additional network pattern targets.",
                 Math.max(0, result.size()));
+    }
+
+    /**
+     * AE2 integrations register their own machine class and expose it through
+     * the same IGrid#getMachines(Class) API as vanilla AE2 interfaces. Discover
+     * those class keys from the grid's machine registry instead of depending on
+     * a particular integration's class name.
+     */
+    private static void collectMachineTypesDeep(Object object, Set<Object> seen,
+                                                Set<Class<?>> machineTypes, int depth) {
+        if (object == null || depth > 12 || !seen.add(object)
+                || machineTypes.size() >= 256) {
+            return;
+        }
+        if (object instanceof Class) {
+            Class<?> type = (Class<?>) object;
+            if (isMachineTypeCandidate(type)) {
+                machineTypes.add(type);
+            }
+            return;
+        }
+        if (object instanceof Map) {
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) object).entrySet()) {
+                collectMachineTypesDeep(entry.getKey(), seen, machineTypes, depth + 1);
+                collectMachineTypesDeep(entry.getValue(), seen, machineTypes, depth + 1);
+            }
+            return;
+        }
+        if (object instanceof Iterable) {
+            for (Object value : (Iterable<?>) object) {
+                collectMachineTypesDeep(value, seen, machineTypes, depth + 1);
+            }
+            return;
+        }
+        if (object.getClass().isArray()) {
+            for (int index = 0; index < Array.getLength(object); index++) {
+                collectMachineTypesDeep(Array.get(object, index), seen, machineTypes, depth + 1);
+            }
+            return;
+        }
+        if (object instanceof CharSequence || object instanceof Number
+                || object instanceof Class || object.getClass().isEnum()) {
+            return;
+        }
+
+        for (Class<?> type = object.getClass(); type != null && type != Object.class;
+             type = type.getSuperclass()) {
+            for (java.lang.reflect.Field field : type.getDeclaredFields()) {
+                int modifiers = field.getModifiers();
+                if (java.lang.reflect.Modifier.isStatic(modifiers)
+                        || field.getType().isPrimitive() || field.isSynthetic()) {
+                    continue;
+                }
+                Object value;
+                try {
+                    field.setAccessible(true);
+                    value = field.get(object);
+                } catch (IllegalAccessException | SecurityException ignored) {
+                    continue;
+                }
+                if (isGridTraversalMember(field.getName(), value)) {
+                    collectMachineTypesDeep(value, seen, machineTypes, depth + 1);
+                }
+            }
+            for (Method method : type.getDeclaredMethods()) {
+                if (method.getParameterTypes().length != 0
+                        || !isMachineCollectionAccessor(method.getName())) {
+                    continue;
+                }
+                try {
+                    method.setAccessible(true);
+                    collectMachineTypesDeep(method.invoke(object), seen, machineTypes, depth + 1);
+                } catch (ReflectiveOperationException | RuntimeException ignored) {
+                    // An implementation may not expose a readable registry accessor.
+                }
+            }
+        }
+    }
+
+    private static boolean isMachineTypeCandidate(Class<?> type) {
+        if (type == null || type == Object.class || type.isPrimitive()
+                || type.isArray() || type.isEnum()) {
+            return false;
+        }
+        String name = type.getName();
+        return !name.startsWith("java.") && !name.startsWith("javax.");
+    }
+
+    private static boolean isMachineCollectionAccessor(String name) {
+        if (name == null) {
+            return false;
+        }
+        String normalized = name.toLowerCase(Locale.ROOT);
+        return normalized.equals("getmachineclasses")
+                || normalized.equals("getmachinetypes")
+                || normalized.equals("getmachineentries")
+                || normalized.equals("getmachinemap")
+                || normalized.equals("getmachines")
+                || normalized.equals("getgridnodes")
+                || normalized.equals("getnodes");
     }
 
     private static void collectGridNodesDeep(Object object, Set<Object> seen,
@@ -534,7 +648,9 @@ public final class PatternUploadService {
                     method.setAccessible(true);
                     Object value = null;
                     if (method.getParameterTypes().length == 0
-                            && isPatternAccessor(normalized)) {
+                            && (isPatternAccessor(normalized)
+                            || (IItemHandler.class.isAssignableFrom(method.getReturnType())
+                            && normalized.contains("inventory")))) {
                         value = method.invoke(object);
                     } else if (method.getParameterTypes().length == 1
                             && method.getParameterTypes()[0] == String.class
@@ -580,6 +696,7 @@ public final class PatternUploadService {
         InterfaceTarget target = new InterfaceTarget(patterns);
         target.hostClassName = context.isEmpty() ? patterns.getClass().getName()
                 : context.get(0).getClass().getName();
+        addLabel(target.identityLabels, patterns.getClass().getName());
         for (Object source : context) {
             addLabel(target.identityLabels, source.getClass().getName());
             addObjectLabels(target.identityLabels, source);
