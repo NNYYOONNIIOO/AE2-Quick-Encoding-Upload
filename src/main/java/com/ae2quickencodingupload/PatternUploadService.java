@@ -34,6 +34,18 @@ public final class PatternUploadService {
     }
 
     public static int uploadInventory(EntityPlayerMP player) {
+        try {
+            return uploadInventoryUnsafe(player);
+        } catch (RuntimeException | LinkageError exception) {
+            // Upload is optional. A discovery failure must never interrupt the
+            // encoder that produced the pattern.
+            LOGGER.warn("Pattern upload discovery failed; leaving patterns untouched.",
+                    exception);
+            return 0;
+        }
+    }
+
+    private static int uploadInventoryUnsafe(EntityPlayerMP player) {
         if (player == null || !hasUploadableInventory(player)) {
             return 0;
         }
@@ -383,8 +395,6 @@ public final class PatternUploadService {
                                                          IGrid grid) {
         Set<IGridNode> nodes = Collections.newSetFromMap(
                 new IdentityHashMap<IGridNode, Boolean>());
-        Set<Class<?>> machineTypes = new LinkedHashSet<>();
-        machineTypes.add(IGridHost.class);
         try {
             for (IGridNode node : grid.getMachines(IGridHost.class)) {
                 if (node != null) {
@@ -392,22 +402,10 @@ public final class PatternUploadService {
                 }
             }
         } catch (RuntimeException exception) {
-            LOGGER.debug("Could not enumerate all AE2 grid hosts directly.", exception);
+            LOGGER.debug("Could not enumerate AE2 grid hosts directly.", exception);
         }
-        collectMachineTypesDeep(grid,
-                Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>()),
-                machineTypes, 0);
-        Set<Object> nodeScan = Collections.newSetFromMap(
-                new IdentityHashMap<Object, Boolean>());
-        for (Class<?> machineType : machineTypes) {
-            Object machineNodes = invokeOneArg(grid, "getMachines", machineType);
-            collectGridNodesDeep(machineNodes, nodeScan, nodes, 0);
-        }
-        collectGridNodesDeep(grid,
-                Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>()), nodes, 0);
-
-        LOGGER.debug("Network machine discovery found {} types and {} active nodes.",
-                machineTypes.size(), nodes.size());
+        LOGGER.debug("Network machine discovery found {} active IGridHost nodes.",
+                nodes.size());
 
         Set<Object> seenHandlers = Collections.newSetFromMap(
                 new IdentityHashMap<Object, Boolean>());
@@ -419,7 +417,7 @@ public final class PatternUploadService {
             if (machine == null || !seenMachines.add(machine)) {
                 continue;
             }
-            collectPatternHandlers(result, seenHandlers, machine,
+            collectKnownPatternHandlers(result, seenHandlers, machine,
                     new ArrayList<Object>(),
                     Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>()), 0);
         }
@@ -525,6 +523,64 @@ public final class PatternUploadService {
                 || normalized.equals("getmachines")
                 || normalized.equals("getgridnodes")
                 || normalized.equals("getnodes");
+    }
+
+    /**
+     * Reads only conventional pattern accessors from a network machine. This
+     * mirrors the interface-terminal integration contract while avoiding
+     * getDeclaredFields()/getDeclaredMethods() over the live machine graph.
+     */
+    private static void collectKnownPatternHandlers(List<InterfaceTarget> result,
+                                                     Set<Object> seenHandlers,
+                                                     Object object, List<Object> context,
+                                                     Set<Object> seen, int depth) {
+        if (object == null || depth > 6 || !seen.add(object)) {
+            return;
+        }
+        if (object instanceof IItemHandler) {
+            addPatternTarget(result, seenHandlers, (IItemHandler) object, context);
+            return;
+        }
+        if (object instanceof Map) {
+            for (Object value : ((Map<?, ?>) object).values()) {
+                collectKnownPatternHandlers(result, seenHandlers, value, context, seen, depth + 1);
+            }
+            return;
+        }
+        if (object instanceof Iterable) {
+            for (Object value : (Iterable<?>) object) {
+                collectKnownPatternHandlers(result, seenHandlers, value, context, seen, depth + 1);
+            }
+            return;
+        }
+        if (object.getClass().isArray()) {
+            for (int index = 0; index < Array.getLength(object); index++) {
+                collectKnownPatternHandlers(result, seenHandlers, Array.get(object, index),
+                        context, seen, depth + 1);
+            }
+            return;
+        }
+        if (object instanceof CharSequence || object instanceof Number
+                || object instanceof Class || object.getClass().isEnum()) {
+            return;
+        }
+
+        List<Object> nextContext = new ArrayList<>(context);
+        nextContext.add(object);
+        for (String accessor : new String[]{
+                "getPatternStores", "getPatternInventory", "getPatterns",
+                "getPatternHandler", "getInterfaceDuality"}) {
+            Object value = invokeKnownNoArg(object, accessor);
+            if (value != null && value != object) {
+                collectKnownPatternHandlers(result, seenHandlers, value,
+                        nextContext, seen, depth + 1);
+            }
+        }
+        Object namedInventory = invokeKnownOneArg(object, "getInventoryByName", "patterns");
+        if (namedInventory != null) {
+            collectKnownPatternHandlers(result, seenHandlers, namedInventory,
+                    nextContext, seen, depth + 1);
+        }
     }
 
     private static void collectGridNodesDeep(Object object, Set<Object> seen,
@@ -752,8 +808,15 @@ public final class PatternUploadService {
     }
 
     private static void addObjectLabels(Set<String> labels, Object object) {
-        addObjectLabels(labels, object, 0,
-                Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>()));
+        if (object == null) {
+            return;
+        }
+        for (String method : new String[]{
+                "getTermName", "getCustomName", "getInterfaceName", "getMachineName",
+                "getName", "getNameString", "getUnlocalizedName", "getConfigName",
+                "getLabel", "getDisplayName"}) {
+            addLabel(labels, invokeKnownNoArg(object, method));
+        }
     }
 
     private static void addObjectLabels(Set<String> labels, Object object, int depth,
@@ -816,6 +879,52 @@ public final class PatternUploadService {
                 || value instanceof net.minecraft.util.text.ITextComponent
                 || value instanceof Number || value instanceof Boolean
                 || value.getClass().isEnum();
+    }
+
+    private static Object invokeKnownNoArg(Object object, String name) {
+        if (object == null || name == null) {
+            return null;
+        }
+        try {
+            for (Class<?> type = object.getClass(); type != null; type = type.getSuperclass()) {
+                try {
+                    Method method = type.getDeclaredMethod(name);
+                    method.setAccessible(true);
+                    return method.invoke(object);
+                } catch (NoSuchMethodException ignored) {
+                    // Continue through the class hierarchy.
+                }
+            }
+            Method method = object.getClass().getMethod(name);
+            method.setAccessible(true);
+            return method.invoke(object);
+        } catch (ReflectiveOperationException | SecurityException | LinkageError ignored) {
+            return null;
+        }
+    }
+
+    private static Object invokeKnownOneArg(Object object, String name, Object argument) {
+        if (object == null || name == null) {
+            return null;
+        }
+        Class<?> argumentType = argument instanceof String ? String.class
+                : argument == null ? Object.class : argument.getClass();
+        try {
+            for (Class<?> type = object.getClass(); type != null; type = type.getSuperclass()) {
+                try {
+                    Method method = type.getDeclaredMethod(name, argumentType);
+                    method.setAccessible(true);
+                    return method.invoke(object, argument);
+                } catch (NoSuchMethodException ignored) {
+                    // Continue through the class hierarchy.
+                }
+            }
+            Method method = object.getClass().getMethod(name, argumentType);
+            method.setAccessible(true);
+            return method.invoke(object, argument);
+        } catch (ReflectiveOperationException | SecurityException | LinkageError ignored) {
+            return null;
+        }
     }
 
     private static void addStackLabels(Set<String> labels, Object value) {
