@@ -170,11 +170,26 @@ public final class PatternUploadService {
             return 0;
         }
 
+        String categoryUid = getCategoryUid(metadata);
+        if (!categoryUid.isEmpty()) {
+            try {
+                // Keep the button path in sync with the interface-terminal path:
+                // older patterns may only have a category and need the HEI
+                // catalyst aliases before their target can be identified.
+                RecipeCatalystResolver.appendMachineAliases(metadata, categoryUid);
+            } catch (RuntimeException exception) {
+                LOGGER.debug("Could not append HEI aliases for category {}.",
+                        categoryUid, exception);
+            }
+        }
+
         Set<String> processing = new LinkedHashSet<>();
         addValues(processing, metadata,
                 "ProcessingMethod", "processing", "ProcessingMethods", "Methods", "methods");
         Set<String> machines = new LinkedHashSet<>();
         addValues(machines, metadata, "MachineName", "machine", "MachineNames");
+        Set<String> categories = new LinkedHashSet<>();
+        addValues(categories, metadata, "CategoryUid", "category", "Category", "categoryUid");
 
         // CategoryUid is deliberately not a standalone match. Categories such as
         // minecraft.smelting are shared by several machines and cannot identify an
@@ -188,7 +203,41 @@ public final class PatternUploadService {
         // interface is never selected merely because its category is shared.
         score = Math.max(score, overlapScore(processing, target.existingProcessing, 800));
         score = Math.max(score, overlapScore(machines, target.existingMachines, 700));
+        score = Math.max(score, overlapScore(categories, target.existingCategories, 900));
+        score = Math.max(score, catalystMatchScore(categoryUid, target.identityLabels));
         return score;
+    }
+
+    private static int catalystMatchScore(String categoryUid, Set<String> targetLabels) {
+        if (categoryUid == null || categoryUid.trim().isEmpty() || targetLabels.isEmpty()) {
+            return 0;
+        }
+        List<ItemStack> catalysts;
+        try {
+            catalysts = RecipeCatalystResolver.getCatalysts(categoryUid);
+        } catch (RuntimeException exception) {
+            LOGGER.debug("Could not read HEI catalysts for category {}.",
+                    categoryUid, exception);
+            return 0;
+        }
+        if (catalysts == null) {
+            return 0;
+        }
+        for (ItemStack catalyst : catalysts) {
+            if (catalyst == null || catalyst.isEmpty()) {
+                continue;
+            }
+            Set<String> catalystLabels = new LinkedHashSet<>();
+            addLabel(catalystLabels, catalyst.getDisplayName());
+            if (catalyst.getItem().getRegistryName() != null) {
+                addLabel(catalystLabels, catalyst.getItem().getRegistryName().toString());
+                addLabel(catalystLabels, catalyst.getItem().getRegistryName().getResourcePath());
+            }
+            if (overlapScore(catalystLabels, targetLabels, 850) > 0) {
+                return 850;
+            }
+        }
+        return 0;
     }
 
     private static int overlapScore(Set<String> values, Set<String> candidates, int score) {
@@ -329,6 +378,8 @@ public final class PatternUploadService {
                     "MachineName", "machine", "MachineNames");
             addValues(target.existingProcessing, metadata,
                     "ProcessingMethod", "processing", "ProcessingMethods", "Methods", "methods");
+            addValues(target.existingCategories, metadata,
+                    "CategoryUid", "category", "Category", "categoryUid");
         }
     }
 
@@ -338,11 +389,13 @@ public final class PatternUploadService {
         }
         for (String method : new String[]{
                 "getTermName", "getCustomName", "getInterfaceName", "getMachineName",
+                "getName", "getNameString", "getUnlocalizedName", "getConfigName",
                 "getLabel", "getDisplayName"}) {
             addLabel(labels, invokeNoArg(object, method));
         }
         for (String field : new String[]{
-                "customName", "myName", "interfaceName", "machineName", "label"}) {
+                "customName", "myName", "interfaceName", "machineName", "name",
+                "nameString", "unlocalizedName", "configName", "termName", "label"}) {
             addLabel(labels, readField(object, field));
         }
     }
@@ -406,7 +459,26 @@ public final class PatternUploadService {
         if (!nested.hasNoTags()) {
             return nested;
         }
-        return root.hasKey("MachineName") || root.hasKey("ProcessingMethod") ? root : null;
+        return root.hasKey("MachineName") || root.hasKey("machine")
+                || root.hasKey("MachineNames") || root.hasKey("ProcessingMethod")
+                || root.hasKey("processing") || root.hasKey("ProcessingMethods")
+                || root.hasKey("CategoryUid") || root.hasKey("category") ? root : null;
+    }
+
+    private static String getCategoryUid(NBTTagCompound metadata) {
+        if (metadata == null) {
+            return "";
+        }
+        for (String key : new String[]{"CategoryUid", "category", "Category", "categoryUid"}) {
+            if (!metadata.hasKey(key, 8)) {
+                continue;
+            }
+            String value = metadata.getString(key);
+            if (value != null && !value.trim().isEmpty()) {
+                return value;
+            }
+        }
+        return "";
     }
 
     private static boolean isCraftingPattern(ItemStack stack) {
@@ -694,6 +766,7 @@ public final class PatternUploadService {
         private final Set<String> identityLabels = new LinkedHashSet<>();
         private final Set<String> existingMachines = new LinkedHashSet<>();
         private final Set<String> existingProcessing = new LinkedHashSet<>();
+        private final Set<String> existingCategories = new LinkedHashSet<>();
         private boolean hasCraftingPattern;
 
         private InterfaceTarget(IItemHandler patterns) {
