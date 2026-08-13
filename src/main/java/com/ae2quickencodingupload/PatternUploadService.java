@@ -1157,11 +1157,11 @@ public final class PatternUploadService {
         if (grid != null) {
             return grid;
         }
-        grid = asGrid(findGrid(player.openContainer));
+        grid = asGrid(findGridFrom(player.openContainer));
         if (grid != null) {
             return grid;
         }
-        return asGrid(findGrid(player));
+        return asGrid(findGridFrom(player));
     }
 
     private static IGrid asGrid(Object value) {
