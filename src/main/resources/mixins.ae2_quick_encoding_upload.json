@@ -9,7 +9,6 @@
     "MixinEncodeRecipeMessage",
     "MixinEncodeRecipeMessageHandler",
     "MixinPatternEncoder",
-    "MixinContainer",
     "MixinAEBaseContainer",
     "MixinContainerUpgradeable",
     "MixinContainerInterfaceTerminal"
