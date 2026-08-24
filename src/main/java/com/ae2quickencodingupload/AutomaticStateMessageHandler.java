@@ -9,17 +9,15 @@ import net.minecraftforge.fml.relauncher.SideOnly;
 
 @SideOnly(Side.CLIENT)
 public final class AutomaticStateMessageHandler
-        implements IMessageHandler<UploadActionMessage, IMessage> {
+        implements IMessageHandler<AutomaticStateMessage, IMessage> {
     @Override
-    public IMessage onMessage(final UploadActionMessage message, MessageContext context) {
-        if (message.getAction() == UploadActionMessage.SYNC_AUTOMATIC) {
-            Minecraft.getMinecraft().addScheduledTask(new Runnable() {
-                @Override
-                public void run() {
-                    AutoUploadSettings.setEnabled(message.isEnabled());
-                }
-            });
-        }
+    public IMessage onMessage(final AutomaticStateMessage message, MessageContext context) {
+        Minecraft.getMinecraft().addScheduledTask(new Runnable() {
+            @Override
+            public void run() {
+                AutoUploadSettings.setEnabled(message.isEnabled());
+            }
+        });
         return null;
     }
 }

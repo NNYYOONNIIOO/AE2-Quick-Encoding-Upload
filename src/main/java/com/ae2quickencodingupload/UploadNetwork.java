@@ -1,7 +1,6 @@
 package com.ae2quickencodingupload;
 
 import net.minecraftforge.fml.common.network.NetworkRegistry;
-import net.minecraftforge.fml.common.FMLCommonHandler;
 import net.minecraftforge.fml.common.network.simpleimpl.SimpleNetworkWrapper;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -9,6 +8,8 @@ import net.minecraft.entity.player.EntityPlayerMP;
 public final class UploadNetwork {
     public static final SimpleNetworkWrapper CHANNEL = NetworkRegistry.INSTANCE
             .newSimpleChannel(AE2QuickEncodingUpload.MODID);
+    private static final int UPLOAD_ACTION_MESSAGE_ID = 0;
+    private static final int AUTOMATIC_STATE_MESSAGE_ID = 1;
     private static boolean initialized;
 
     private UploadNetwork() {
@@ -19,11 +20,9 @@ public final class UploadNetwork {
             return;
         }
         CHANNEL.registerMessage(UploadActionMessage.Handler.class,
-                UploadActionMessage.class, 0, Side.SERVER);
-        if (FMLCommonHandler.instance().getSide() == Side.CLIENT) {
-            CHANNEL.registerMessage(AutomaticStateMessageHandler.class,
-                    UploadActionMessage.class, 1, Side.CLIENT);
-        }
+                UploadActionMessage.class, UPLOAD_ACTION_MESSAGE_ID, Side.SERVER);
+        CHANNEL.registerMessage(AutomaticStateMessageHandler.class,
+                AutomaticStateMessage.class, AUTOMATIC_STATE_MESSAGE_ID, Side.CLIENT);
         initialized = true;
     }
 
@@ -42,7 +41,6 @@ public final class UploadNetwork {
     }
 
     public static void sendAutomaticStateTo(EntityPlayerMP player, boolean enabled) {
-        CHANNEL.sendTo(new UploadActionMessage(
-                UploadActionMessage.SYNC_AUTOMATIC, enabled), player);
+        CHANNEL.sendTo(new AutomaticStateMessage(enabled), player);
     }
 }
