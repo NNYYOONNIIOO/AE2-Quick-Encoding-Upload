@@ -1,6 +1,7 @@
 package com.ae2quickencodingupload;
 
 import net.minecraftforge.fml.common.network.NetworkRegistry;
+import net.minecraftforge.fml.common.FMLCommonHandler;
 import net.minecraftforge.fml.common.network.simpleimpl.SimpleNetworkWrapper;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -21,8 +22,13 @@ public final class UploadNetwork {
         }
         CHANNEL.registerMessage(UploadActionMessage.Handler.class,
                 UploadActionMessage.class, UPLOAD_ACTION_MESSAGE_ID, Side.SERVER);
-        CHANNEL.registerMessage(AutomaticStateMessageHandler.class,
-                AutomaticStateMessage.class, AUTOMATIC_STATE_MESSAGE_ID, Side.CLIENT);
+        if (FMLCommonHandler.instance().getSide() == Side.CLIENT) {
+            CHANNEL.registerMessage(AutomaticStateMessageHandler.class,
+                    AutomaticStateMessage.class, AUTOMATIC_STATE_MESSAGE_ID, Side.CLIENT);
+        } else {
+            CHANNEL.registerMessage(AutomaticStateMessageServerHandler.class,
+                    AutomaticStateMessage.class, AUTOMATIC_STATE_MESSAGE_ID, Side.SERVER);
+        }
         initialized = true;
     }
 
