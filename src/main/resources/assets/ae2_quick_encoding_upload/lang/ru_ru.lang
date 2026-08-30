@@ -1,0 +1,4 @@
+ae2_quick_encoding_upload.gui.upload=Загрузка кодировки в один клик
+ae2_quick_encoding_upload.gui.auto_upload=Автоматическая загрузка кодировки
+ae2_quick_encoding_upload.gui.auto_upload.enabled=ВКЛ
+ae2_quick_encoding_upload.gui.auto_upload.disabled=ВЫКЛ
