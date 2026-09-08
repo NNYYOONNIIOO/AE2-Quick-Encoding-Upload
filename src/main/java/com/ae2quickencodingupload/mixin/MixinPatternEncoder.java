@@ -52,7 +52,7 @@ public abstract class MixinPatternEncoder {
             at = @At("RETURN"), remap = false, require = 0)
     private static void ae2QuickEncodingUpload$autoUpload(
             EntityPlayerMP player, PatternData data, CallbackInfoReturnable<Boolean> callback) {
-        LOGGER.info("Automatic upload hook reached for {}: success={}, enabled={}",
+        com.ae2quickencodingupload.DebugLogger.info(LOGGER, "Automatic upload hook reached for {}: success={}, enabled={}",
                 player.getName(), callback.getReturnValue(), AutoUploadState.isEnabled(player));
         if (callback.getReturnValue()) {
             ae2QuickEncodingUpload$tryAutoUpload(player, "encode-return");
@@ -79,7 +79,7 @@ public abstract class MixinPatternEncoder {
             return;
         }
         int moved = PatternUploadService.uploadInventory(player);
-        LOGGER.info("Automatic pattern upload source={} player={} moved={}",
+        com.ae2quickencodingupload.DebugLogger.info(LOGGER, "Automatic pattern upload source={} player={} moved={}",
                 source, player.getName(), moved);
         if (moved == 0) {
             player.getServerWorld().addScheduledTask(new Runnable() {
@@ -89,7 +89,7 @@ public abstract class MixinPatternEncoder {
                         return;
                     }
                     int retry = PatternUploadService.uploadInventory(player);
-                    LOGGER.info("Deferred automatic pattern upload player={} moved={}",
+                    com.ae2quickencodingupload.DebugLogger.info(LOGGER, "Deferred automatic pattern upload player={} moved={}",
                             player.getName(), retry);
                 }
             });

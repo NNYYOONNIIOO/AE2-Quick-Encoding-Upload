@@ -41,12 +41,12 @@ public final class RecipeCatalystResolver {
         if (catalyst == null || categoryUids == null || categoryUids.length == 0) {
             return;
         }
-        LOGGER.info("[AE2QuickEncodingUpload] HEI catalyst hook type={} categories={}",
+        com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] HEI catalyst hook type={} categories={}",
                 catalyst.getClass().getName(), java.util.Arrays.toString(categoryUids));
         List<ItemStack> stacks = new ArrayList<>();
         collectItemStacks(catalyst, stacks);
         if (stacks.isEmpty()) {
-            LOGGER.info("[AE2QuickEncodingUpload] HEI catalyst hook produced no ItemStack values type={}",
+            com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] HEI catalyst hook produced no ItemStack values type={}",
                     catalyst.getClass().getName());
             return;
         }
@@ -64,7 +64,7 @@ public final class RecipeCatalystResolver {
                     }
                 }
             }
-            LOGGER.info("[AE2QuickEncodingUpload] captured HEI catalysts category={} count={} names={}",
+            com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] captured HEI catalysts category={} count={} names={}",
                     key, registered.size(), describeStacks(registered));
         }
     }
@@ -80,10 +80,10 @@ public final class RecipeCatalystResolver {
             catalystTable = findFieldContaining(modRegistry, "catalyst");
         }
         if (catalystTable == null) {
-            LOGGER.info("[AE2QuickEncodingUpload] HEI catalyst table unavailable");
+            com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] HEI catalyst table unavailable");
             return;
         }
-        LOGGER.info("[AE2QuickEncodingUpload] capturing HEI catalyst table type={}",
+        com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] capturing HEI catalyst table type={}",
                 catalystTable.getClass().getName());
         captureCatalystTable(catalystTable);
     }
@@ -96,7 +96,7 @@ public final class RecipeCatalystResolver {
                 captureRecipeCatalyst(entry.getValue(), new String[]{String.valueOf(entry.getKey())});
                 categoryCount++;
             }
-            LOGGER.info("[AE2QuickEncodingUpload] captured HEI catalyst map categories={}",
+            com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] captured HEI catalyst map categories={}",
                     categoryCount);
             return;
         }
@@ -111,7 +111,7 @@ public final class RecipeCatalystResolver {
                     categoryCount++;
                 }
             }
-            LOGGER.info("[AE2QuickEncodingUpload] captured HEI catalyst table categories={}",
+            com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] captured HEI catalyst table categories={}",
                     categoryCount);
             return;
         }
@@ -170,7 +170,7 @@ public final class RecipeCatalystResolver {
             synchronized (registered) {
                 appendUniqueStacks(catalysts, registered);
             }
-            LOGGER.info("[AE2QuickEncodingUpload] cached catalysts category={} count={}",
+            com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] cached catalysts category={} count={}",
                     categoryUid, catalysts.size());
         }
 
@@ -186,7 +186,7 @@ public final class RecipeCatalystResolver {
                 recipeRegistry = findObjectByType(proxy, "mezz.jei.api.IRecipeRegistry", new HashSet<Object>());
             }
             if (recipeRegistry == null) {
-                LOGGER.info("[AE2QuickEncodingUpload] HEI recipe registry unavailable category={}",
+                com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] HEI recipe registry unavailable category={}",
                         categoryUid);
                 return catalysts;
             }
@@ -196,7 +196,7 @@ public final class RecipeCatalystResolver {
                 category = findCategoryIgnoreCase(recipeRegistry, categoryUid);
             }
             if (category == null) {
-                LOGGER.info("[AE2QuickEncodingUpload] recipe category not registered: {}", categoryUid);
+                com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] recipe category not registered: {}", categoryUid);
                 return catalysts;
             }
 
@@ -204,11 +204,11 @@ public final class RecipeCatalystResolver {
             List<ItemStack> runtimeCatalysts = new ArrayList<>();
             collectItemStacks(rawCatalysts, runtimeCatalysts);
             appendUniqueStacks(catalysts, runtimeCatalysts);
-            LOGGER.info("[AE2QuickEncodingUpload] runtime catalysts category={} count={}",
+            com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] runtime catalysts category={} count={}",
                     categoryUid, catalysts.size());
             return catalysts;
         } catch (Throwable error) {
-            LOGGER.debug("[AE2QuickEncodingUpload] could not read recipe catalysts for category "
+            com.ae2quickencodingupload.DebugLogger.debug(LOGGER, "[AE2QuickEncodingUpload] could not read recipe catalysts for category "
                     + categoryUid, error);
             return catalysts;
         }

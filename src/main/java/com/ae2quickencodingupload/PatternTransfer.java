@@ -59,13 +59,13 @@ public final class PatternTransfer {
                     }
                 }
             } catch (ReflectiveOperationException | SecurityException e) {
-                LOGGER.info("[AE2QuickEncodingUpload] failed to capture GUI interface map", e);
+                com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] failed to capture GUI interface map", e);
             }
         }
         synchronizedInterfaceInventories = captured.isEmpty()
                 ? Collections.emptyMap()
                 : captured;
-        LOGGER.info("[AE2QuickEncodingUpload] GUI Mixin captured synchronized interface count={}",
+        com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] GUI Mixin captured synchronized interface count={}",
                 synchronizedInterfaceInventories.size());
     }
 
@@ -81,7 +81,7 @@ public final class PatternTransfer {
     public static boolean tryInterfaceTerminalTransfer(Container container,
                                                         EntityPlayer player,
                                                         int slotIndex) {
-        LOGGER.info("[AE2QuickEncodingUpload] transferStackInSlot routing hook invoked");
+        com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] transferStackInSlot routing hook invoked");
         if (container == null || player == null || !player.world.isRemote
                 || !isInterfaceTerminalContainer(container)
                 || slotIndex < 0 || slotIndex >= container.inventorySlots.size()) {
@@ -114,11 +114,11 @@ public final class PatternTransfer {
             }
         }
         if (target == null) {
-            LOGGER.info("[AE2QuickEncodingUpload] no matching interface target metadata={}", machineData);
+            com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] no matching interface target metadata={}", machineData);
             return false;
         }
 
-        LOGGER.info("[AE2QuickEncodingUpload] sending PLACE_SINGLE sourceSlot={} targetId={} visualSlotPresent={}",
+        com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] sending PLACE_SINGLE sourceSlot={} targetId={} visualSlotPresent={}",
                 source.slotNumber, target.id, target.slot != null);
         NetworkHandler.instance().sendToServer(new PacketInventoryAction(
                 InventoryAction.PLACE_SINGLE, source.slotNumber, target.id));
@@ -236,7 +236,7 @@ public final class PatternTransfer {
      * are the fallback for an otherwise empty interface.
      */
     private static InterfaceTarget findCraftingInterfaceTarget(Container container) {
-        LOGGER.info("[AE2QuickEncodingUpload] searching for generic crafting-capable interface");
+        com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] searching for generic crafting-capable interface");
         List<ClientDCInternalInv> allInterfaces = findGuiInventories();
 
         for (ClientDCInternalInv clientInventory : allInterfaces) {
@@ -245,7 +245,7 @@ public final class PatternTransfer {
                 continue;
             }
             long id = clientInventory.getId();
-            LOGGER.info("[AE2QuickEncodingUpload] selected crafting interface id={} displayName={} reason=stored-crafting-pattern",
+            com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] selected crafting interface id={} displayName={} reason=stored-crafting-pattern",
                     id, clientInventory.getName());
             return new InterfaceTarget(id, findEmptyDisconnectedSlot(container, id));
         }
@@ -258,11 +258,11 @@ public final class PatternTransfer {
             String unlocalizedName = clientInventory.getUnlocalizedName();
             boolean nameCapability = isCraftingCapabilityName(displayName)
                     || isCraftingCapabilityName(unlocalizedName);
-            LOGGER.info("[AE2QuickEncodingUpload] crafting interface candidate id={} displayName={} unlocalizedName={} nameCapability={}",
+            com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] crafting interface candidate id={} displayName={} unlocalizedName={} nameCapability={}",
                     clientInventory.getId(), displayName, unlocalizedName, nameCapability);
             if (nameCapability) {
                 long id = clientInventory.getId();
-                LOGGER.info("[AE2QuickEncodingUpload] selected crafting interface id={} displayName={} reason=generic-capability-name",
+                com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] selected crafting interface id={} displayName={} reason=generic-capability-name",
                         id, displayName);
                 return new InterfaceTarget(id, findEmptyDisconnectedSlot(container, id));
             }
@@ -296,7 +296,7 @@ public final class PatternTransfer {
     private static InterfaceTarget findInterfaceTarget(Container container,
                                                         NBTTagCompound machineData,
                                                         boolean processingFirst) {
-        LOGGER.info("[AE2QuickEncodingUpload] findInterfaceTarget invoked");
+        com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] findInterfaceTarget invoked");
         if (machineData == null || machineData.hasNoTags()) {
             return null;
         }
@@ -307,9 +307,9 @@ public final class PatternTransfer {
             // Also upgrade older patterns in memory with the exact HEI-left-list
             // machine aliases before the explicit category match/fallback.
             RecipeCatalystResolver.appendMachineAliases(machineData, categoryUid);
-            LOGGER.info("[AE2QuickEncodingUpload] category={} registered catalyst count={}",
+            com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] category={} registered catalyst count={}",
                     categoryUid, catalysts.size());
-            LOGGER.info("[AE2QuickEncodingUpload] category={} HEI machines={}",
+            com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] category={} HEI machines={}",
                     categoryUid, RecipeCatalystResolver.describeCatalysts(categoryUid));
             InterfaceTarget categoryTarget = findCategoryCatalystTarget(container, categoryUid, catalysts);
             if (categoryTarget != null) {
@@ -330,7 +330,7 @@ public final class PatternTransfer {
         // inspect the GUI byId map instead. AE2 only synchronizes interfaces
         // whose INTERFACE_TERMINAL setting allows them to appear in this terminal.
         List<ClientDCInternalInv> allInterfaces = findGuiInventories();
-        LOGGER.info("[AE2QuickEncodingUpload] synchronized interface count={}", allInterfaces.size());
+        com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] synchronized interface count={}", allInterfaces.size());
         for (ClientDCInternalInv clientInventory : allInterfaces) {
             if (isPlaceholderInterface(clientInventory) || !hasFreePatternSlot(clientInventory)) {
                 continue;
@@ -342,10 +342,10 @@ public final class PatternTransfer {
             boolean aliasMatch = matchesMetadata(metadata, displayName, processingFirst)
                     || matchesMetadata(metadata, unlocalizedName, processingFirst)
                     || matchesStoredPatternForCategory(clientInventory, machineData);
-            LOGGER.info("[AE2QuickEncodingUpload] candidate interface id={} displayName={} unlocalizedName={} category={} aliasMatch={} processingFirst={}",
+            com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] candidate interface id={} displayName={} unlocalizedName={} category={} aliasMatch={} processingFirst={}",
                     trackerId, displayName, unlocalizedName, categoryUid, aliasMatch, processingFirst);
             if (aliasMatch) {
-                LOGGER.info("[AE2QuickEncodingUpload] selected interface id={} displayName={} unlocalizedName={} reason=pattern-alias processingFirst={}",
+                com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] selected interface id={} displayName={} unlocalizedName={} reason=pattern-alias processingFirst={}",
                         trackerId, displayName, unlocalizedName, processingFirst);
                 // The entry may be outside the currently rendered page. The server
                 // uses this synchronized id to insert into the first free pattern slot.
@@ -394,12 +394,12 @@ public final class PatternTransfer {
                 continue;
             }
             boolean matches = RecipeCatalystResolver.matchesAny(catalysts, clientInventory);
-            LOGGER.info("[AE2QuickEncodingUpload] category candidate id={} displayName={} unlocalizedName={} category={} catalystMatch={}",
+            com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] category candidate id={} displayName={} unlocalizedName={} category={} catalystMatch={}",
                     clientInventory.getId(), clientInventory.getName(),
                     clientInventory.getUnlocalizedName(), categoryUid, matches);
             if (matches) {
                 long id = clientInventory.getId();
-                LOGGER.info("[AE2QuickEncodingUpload] selected interface id={} displayName={} reason=category-catalyst category={}",
+                com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] selected interface id={} displayName={} reason=category-catalyst category={}",
                         id, clientInventory.getName(), categoryUid);
                 return new InterfaceTarget(id, findEmptyDisconnectedSlot(container, id));
             }
@@ -445,7 +445,7 @@ public final class PatternTransfer {
         Map<Long, ClientDCInternalInv> directGuiInventories = synchronizedInterfaceInventories;
         if (directGuiInventories != null && !directGuiInventories.isEmpty()) {
             List<ClientDCInternalInv> result = new ArrayList<>(directGuiInventories.values());
-            LOGGER.info("[AE2QuickEncodingUpload] synchronized interface count={} source=gui-mixin",
+            com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] synchronized interface count={} source=gui-mixin",
                     result.size());
             return result;
         }
@@ -572,7 +572,7 @@ public final class PatternTransfer {
                     }
                     net.minecraft.nbt.NBTTagCompound nbt = (net.minecraft.nbt.NBTTagCompound) value;
                     if ("data".equals(field.getName())) {
-                        LOGGER.info("[AE2QuickEncodingUpload] interface data field found on {} with keys {}", type.getName(), nbt.getKeySet());
+                        com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] interface data field found on {} with keys {}", type.getName(), nbt.getKeySet());
                         return nbt;
                     }
                     if (fallback == null && (nbt.hasKey("=id") || !nbt.getKeySet().isEmpty())) {
@@ -585,14 +585,14 @@ public final class PatternTransfer {
             type = type.getSuperclass();
         }
         if (fallback != null) {
-            LOGGER.info("[AE2QuickEncodingUpload] interface data fallback keys {}", fallback.getKeySet());
+            com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] interface data fallback keys {}", fallback.getKeySet());
         }
         return fallback;
     }
 
     private static long disconnectedSlotId(SlotDisconnected slot) {
         long id = slot.getSlot().getId();
-        LOGGER.info("[AE2QuickEncodingUpload] empty interface target slot id={}", id);
+        com.ae2quickencodingupload.DebugLogger.info(LOGGER, "[AE2QuickEncodingUpload] empty interface target slot id={}", id);
         return id;
     }
 

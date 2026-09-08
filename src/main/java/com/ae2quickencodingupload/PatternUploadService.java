@@ -69,7 +69,7 @@ public final class PatternUploadService {
                 player.openContainer.detectAndSendChanges();
             }
         }
-        LOGGER.info("Pattern upload for {}: grid={}, interfaces={}, moved={}",
+        com.ae2quickencodingupload.DebugLogger.info(LOGGER, "Pattern upload for {}: grid={}, interfaces={}, moved={}",
                 player.getName(), grid.getClass().getName(), targets.size(), moved);
         return moved;
     }
@@ -152,7 +152,7 @@ public final class PatternUploadService {
         int bestScore = 0;
         for (InterfaceTarget target : targets) {
             int score = matchScore(pattern, target);
-            LOGGER.debug("Pattern target candidate host={}, score={}, labels={}, slots={}",
+            com.ae2quickencodingupload.DebugLogger.debug(LOGGER, "Pattern target candidate host={}, score={}, labels={}, slots={}",
                     target.hostClassName, score, target.identityLabels,
                     countEmptyPatternSlots(target.patterns));
             if (score > bestScore) {
@@ -161,7 +161,7 @@ public final class PatternUploadService {
             }
         }
         if (best != null) {
-            LOGGER.info("Selected pattern upload target host={}, score={}, labels={}",
+            com.ae2quickencodingupload.DebugLogger.info(LOGGER, "Selected pattern upload target host={}, score={}, labels={}",
                     best.hostClassName, bestScore, best.identityLabels);
         }
         return best;
@@ -193,7 +193,7 @@ public final class PatternUploadService {
                 // catalyst aliases before their target can be identified.
                 RecipeCatalystResolver.appendMachineAliases(metadata, categoryUid);
             } catch (RuntimeException exception) {
-                LOGGER.debug("Could not append HEI aliases for category {}.",
+                com.ae2quickencodingupload.DebugLogger.debug(LOGGER, "Could not append HEI aliases for category {}.",
                         categoryUid, exception);
             }
         }
@@ -250,7 +250,7 @@ public final class PatternUploadService {
         try {
             catalysts = RecipeCatalystResolver.getCatalysts(categoryUid);
         } catch (RuntimeException exception) {
-            LOGGER.debug("Could not read HEI catalysts for category {}.",
+            com.ae2quickencodingupload.DebugLogger.debug(LOGGER, "Could not read HEI catalysts for category {}.",
                     categoryUid, exception);
             return 0;
         }
@@ -365,7 +365,7 @@ public final class PatternUploadService {
                 patterns = asHandler(invokeNoArg(duality, "getPatterns"));
             }
             if (patterns == null) {
-                LOGGER.debug("Skipped AE2 interface host {}: no patterns inventory.",
+                com.ae2quickencodingupload.DebugLogger.debug(LOGGER, "Skipped AE2 interface host {}: no patterns inventory.",
                         host.getClass().getName());
                 continue;
             }
@@ -379,7 +379,7 @@ public final class PatternUploadService {
             addObjectLabels(target.identityLabels, duality);
             readExistingPatterns(target);
             result.add(target);
-            LOGGER.debug("Accepted AE2 interface {} with {} pattern slots and labels {}.",
+            com.ae2quickencodingupload.DebugLogger.debug(LOGGER, "Accepted AE2 interface {} with {} pattern slots and labels {}.",
                     host.getClass().getName(), patterns.getSlots(), target.identityLabels);
         }
     }
@@ -410,9 +410,9 @@ public final class PatternUploadService {
             discoveredNodes += collectRegisteredGridNodes(result, seenMachines,
                     seenHandlers, nodes, seenNodes);
         }
-        LOGGER.debug("Network machine discovery found {} nodes across {} registered machine types.",
+        com.ae2quickencodingupload.DebugLogger.debug(LOGGER, "Network machine discovery found {} nodes across {} registered machine types.",
                 discoveredNodes, machineTypes.size());
-        LOGGER.debug("Discovered {} network pattern targets.",
+        com.ae2quickencodingupload.DebugLogger.debug(LOGGER, "Discovered {} network pattern targets.",
                 Math.max(0, result.size()));
     }
 
@@ -859,7 +859,7 @@ public final class PatternUploadService {
         }
         readExistingPatterns(target);
         result.add(target);
-        LOGGER.debug("Accepted optional network pattern target {} with {} slots and labels {}.",
+        com.ae2quickencodingupload.DebugLogger.debug(LOGGER, "Accepted optional network pattern target {} with {} slots and labels {}.",
                 target.hostClassName, patterns.getSlots(), target.identityLabels);
     }
 

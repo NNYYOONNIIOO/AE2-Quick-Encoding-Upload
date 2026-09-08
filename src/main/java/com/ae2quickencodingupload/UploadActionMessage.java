@@ -57,7 +57,7 @@ public final class UploadActionMessage implements IMessage {
                 return null;
             }
             final EntityPlayerMP player = context.getServerHandler().player;
-            LOGGER.info("Received upload action {} from {}", message.action, player.getName());
+            com.ae2quickencodingupload.DebugLogger.info(LOGGER, "Received upload action {} from {}", message.action, player.getName());
             player.getServerWorld().addScheduledTask(new Runnable() {
                 @Override
                 public void run() {
@@ -67,11 +67,11 @@ public final class UploadActionMessage implements IMessage {
                     } else if (message.action == TOGGLE_AUTOMATIC) {
                         AutoUploadState.setEnabled(player, message.enabled);
                         UploadNetwork.sendAutomaticStateTo(player, message.enabled);
-                        LOGGER.info("Automatic pattern upload for {} is now {}.",
+                        com.ae2quickencodingupload.DebugLogger.info(LOGGER, "Automatic pattern upload for {} is now {}.",
                                 player.getName(), message.enabled ? "enabled" : "disabled");
                     } else if (message.action == UPLOAD) {
                         int moved = PatternUploadService.uploadInventory(player);
-                        LOGGER.info("Manual pattern upload for {} moved {} pattern items.",
+                        com.ae2quickencodingupload.DebugLogger.info(LOGGER, "Manual pattern upload for {} moved {} pattern items.",
                                 player.getName(), moved);
                     }
                 }
